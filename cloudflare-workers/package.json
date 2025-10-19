@@ -1,0 +1,17 @@
+{
+  "name": "document-analysis-api",
+  "version": "1.0.0",
+  "description": "Belge analizi için Cloudflare Workers API",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "keywords": ["cloudflare", "workers", "api"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}
+

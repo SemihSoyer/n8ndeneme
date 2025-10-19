@@ -1,0 +1,126 @@
+{
+  "name": "Belge Analiz ve Tablo Oluşturma",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "document-analysis",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-node",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "generate-new-id"
+    },
+    {
+      "parameters": {
+        "url": "={{$json.r2_document_url}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "options": {}
+      },
+      "id": "download-document",
+      "name": "Belgeyi İndir (R2)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 300],
+      "notes": "R2'den belgeyi indir (şimdilik mock)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Belge analizi (Mock AI işleme)\n// Gerçek uygulamada buraya OpenAI/Anthropic API çağrısı gelecek\n\nconst documentInfo = $input.first().json;\nconst userRequest = documentInfo.user_request;\n\n// Mock tablo verisi oluştur\nconst mockTableData = {\n  headers: ['Sütun 1', 'Sütun 2', 'Sütun 3'],\n  rows: [\n    { 'Sütun 1': 'Veri 1-1', 'Sütun 2': 'Veri 1-2', 'Sütun 3': 'Veri 1-3' },\n    { 'Sütun 1': 'Veri 2-1', 'Sütun 2': 'Veri 2-2', 'Sütun 3': 'Veri 2-3' },\n    { 'Sütun 1': 'Veri 3-1', 'Sütun 2': 'Veri 3-2', 'Sütun 3': 'Veri 3-3' },\n    { 'Sütun 1': 'Veri 4-1', 'Sütun 2': 'Veri 4-2', 'Sütun 3': 'Veri 4-3' },\n    { 'Sütun 1': 'Veri 5-1', 'Sütun 2': 'Veri 5-2', 'Sütun 3': 'Veri 5-3' }\n  ]\n};\n\nreturn {\n  table_id: documentInfo.table_id,\n  document_id: documentInfo.document_id,\n  chat_message_id: documentInfo.chat_message_id,\n  callback_url: documentInfo.callback_url,\n  status: 'completed',\n  table_data: mockTableData,\n  user_request: userRequest\n};"
+      },
+      "id": "process-document",
+      "name": "AI Analiz (Mock)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300],
+      "notes": "Mock AI işleme - Gerçek projede OpenAI/Anthropic kullanın"
+    },
+    {
+      "parameters": {
+        "url": "={{$json.callback_url}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"table_id\": \"{{$json.table_id}}\",\n  \"document_id\": \"{{$json.document_id}}\",\n  \"chat_message_id\": \"{{$json.chat_message_id}}\",\n  \"status\": \"{{$json.status}}\",\n  \"table_data\": {{$json.table_data}}\n}",
+        "options": {}
+      },
+      "id": "send-callback",
+      "name": "Cloudflare'e Gönder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 300],
+      "notes": "Sonucu Cloudflare Workers'a gönder"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"success\": true, \"message\": \"İşlem başladı\"}",
+        "options": {}
+      },
+      "id": "webhook-response",
+      "name": "Webhook Yanıtı",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Belgeyi İndir (R2)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Belgeyi İndir (R2)": {
+      "main": [
+        [
+          {
+            "node": "AI Analiz (Mock)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Analiz (Mock)": {
+      "main": [
+        [
+          {
+            "node": "Cloudflare'e Gönder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cloudflare'e Gönder": {
+      "main": [
+        [
+          {
+            "node": "Webhook Yanıtı",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-10-19T12:00:00.000Z",
+  "versionId": "1"
+}
+

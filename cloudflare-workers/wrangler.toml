@@ -1,0 +1,25 @@
+name = "document-analysis-api"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+
+# D1 Database binding
+[[d1_databases]]
+binding = "DB"
+database_name = "document-analysis-db"
+database_id = "396cec1b-d4a3-45dc-ae72-d2a145fd76cb"
+
+# R2 Bucket binding
+[[r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "document-analysis-storage"
+
+# Environment variables
+[vars]
+MAX_FILE_SIZE = "10485760"
+ALLOWED_FILE_TYPES = "application/pdf,image/jpeg,image/png,image/jpg"
+CORS_ORIGIN = "*"
+
+# Secrets (wrangler secret put komutuyla eklenecek)
+# N8N_WEBHOOK_URL
+# API_SECRET
+
