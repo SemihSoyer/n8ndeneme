@@ -1,5 +1,5 @@
 // Chat mesajları handler'ı
-export async function handleChat(request, env) {
+export async function handleChat(request, env, ctx) {
   try {
     const { documentId, message } = await request.json();
 
@@ -55,17 +55,19 @@ export async function handleChat(request, env) {
       console.log('Sending to N8N:', env.N8N_WEBHOOK_URL);
       console.log('Payload:', JSON.stringify(n8nPayload, null, 2));
       
-      fetch(env.N8N_WEBHOOK_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(n8nPayload)
-      })
-        .then(response => {
-          console.log('N8N response status:', response.status);
-          return response.text();
-        })
-        .then(text => console.log('N8N response:', text))
-        .catch(err => console.error('N8N webhook error:', err));
+      try {
+        const response = await fetch(env.N8N_WEBHOOK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(n8nPayload)
+        });
+        const responseBody = await response.text();
+        console.log('N8N response status:', response.status);
+        console.log('N8N response body:', responseBody);
+      } catch (err) {
+        console.error('N8N webhook error:', err.toString());
+      }
+
     } else {
       console.error('N8N_WEBHOOK_URL is not defined!');
     }

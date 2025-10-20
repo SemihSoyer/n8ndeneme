@@ -49,7 +49,7 @@ export default {
       }
 
       if (path === '/api/chat' && request.method === 'POST') {
-        return handleChat(request, env);
+        return handleChat(request, env, ctx);
       }
 
       if (path.startsWith('/api/chat/') && request.method === 'GET') {
