@@ -1,0 +1,50 @@
+# n8n Custom Docker Image - VENV Version
+# Base: Official n8n image
+# Added: Python 3.11 + Excel/PDF libraries (in virtual environment)
+
+FROM n8nio/n8n:latest
+
+# Switch to root to install packages
+USER root
+
+# Install Python and pip
+RUN apk add --no-cache \
+    python3 \
+    py3-pip \
+    python3-dev \
+    build-base \
+    libffi-dev \
+    openssl-dev \
+    jpeg-dev \
+    zlib-dev \
+    freetype-dev
+
+# Create virtual environment
+RUN python3 -m venv /opt/venv
+
+# Activate venv and install libraries
+ENV PATH="/opt/venv/bin:$PATH"
+
+RUN /opt/venv/bin/pip install --no-cache-dir \
+    openpyxl==3.1.2 \
+    pandas==2.1.4 \
+    reportlab==4.0.7 \
+    Pillow==10.1.0 \
+    xlsxwriter==3.1.9 \
+    fpdf2==2.7.6
+
+# Verify installations
+RUN /opt/venv/bin/python --version && \
+    /opt/venv/bin/pip list && \
+    /opt/venv/bin/python -c "import openpyxl; import reportlab; print('Python libraries OK!')"
+
+# Switch back to n8n user
+USER node
+
+# Environment variables
+ENV PYTHONUNBUFFERED=1
+ENV N8N_PYTHON_PATH=/opt/venv/bin/python
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Healthcheck (inherit from base image)
+# n8n will start normally on port 5678

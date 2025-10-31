@@ -8,7 +8,9 @@ export async function handleWebhook(request, env) {
       document_id,
       chat_message_id,
       status, 
-      table_data, 
+      table_data,
+      total_documents,
+      processed_documents,
       error_message 
     } = payload;
 
@@ -18,6 +20,11 @@ export async function handleWebhook(request, env) {
 
     // Generated table kaydını güncelle
     if (status === 'completed') {
+      // table_data'nın JSON string olduğundan emin ol
+      const tableDataStr = typeof table_data === 'string' 
+        ? table_data 
+        : JSON.stringify(table_data);
+
       await env.DB.prepare(`
         UPDATE generated_tables 
         SET status = 'completed',
@@ -25,22 +32,24 @@ export async function handleWebhook(request, env) {
             completed_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `).bind(
-        JSON.stringify(table_data),
+        tableDataStr,
         table_id
       ).run();
 
-      // Assistant mesajını güncelle (tablo sonucu)
-      const tablePreview = generateTablePreview(table_data);
-      await env.DB.prepare(`
-        UPDATE chat_messages 
-        SET message = ?
-        WHERE document_id = ? AND role = 'assistant'
-        ORDER BY created_at DESC
-        LIMIT 1
-      `).bind(
-        `Tablo oluşturuldu!\n\n${tablePreview}`,
-        document_id
-      ).run();
+      // document_id varsa assistant mesajını güncelle (tablo sonucu)
+      if (document_id) {
+        const tablePreview = generateTablePreview(table_data);
+        await env.DB.prepare(`
+          UPDATE chat_messages 
+          SET message = ?
+          WHERE document_id = ? AND role = 'assistant'
+          ORDER BY created_at DESC
+          LIMIT 1
+        `).bind(
+          `Tablo oluşturuldu!\n\n${tablePreview}`,
+          document_id
+        ).run();
+      }
 
     } else if (status === 'failed') {
       await env.DB.prepare(`
@@ -54,24 +63,28 @@ export async function handleWebhook(request, env) {
         table_id
       ).run();
 
-      // Hata mesajı ekle
-      await env.DB.prepare(`
-        UPDATE chat_messages 
-        SET message = ?
-        WHERE document_id = ? AND role = 'assistant'
-        ORDER BY created_at DESC
-        LIMIT 1
-      `).bind(
-        `Tablo oluşturulurken hata oluştu: ${error_message}`,
-        document_id
-      ).run();
+      // document_id varsa hata mesajı ekle
+      if (document_id) {
+        await env.DB.prepare(`
+          UPDATE chat_messages 
+          SET message = ?
+          WHERE document_id = ? AND role = 'assistant'
+          ORDER BY created_at DESC
+          LIMIT 1
+        `).bind(
+          `Tablo oluşturulurken hata oluştu: ${error_message}`,
+          document_id
+        ).run();
+      }
     }
 
     return jsonResponse({
       success: true,
       message: 'Webhook işlendi',
       tableId: table_id,
-      status
+      status,
+      documentsProcessed: total_documents || null,
+      documentIds: processed_documents || null
     });
 
   } catch (error) {
@@ -139,4 +152,3 @@ function jsonResponse(data, status = 200) {
     },
   });
 }
-

@@ -1,0 +1,12 @@
+# Docker ignore file
+.git
+.gitignore
+node_modules
+*.log
+.DS_Store
+README.md
+*.md
+frontend
+cloudflare-workers
+supabase-test
+n8n-workflow

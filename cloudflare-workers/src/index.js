@@ -3,6 +3,7 @@ import { handleChat, handleGetMessages } from './handlers/chat.js';
 import { handleWebhook } from './handlers/webhook.js';
 import { handleStatus } from './handlers/status.js';
 import { handleDownload } from './handlers/download.js';
+import { handleExportCreate, handleExportStatus, handleExportCallback } from './handlers/export.js';
 
 // CORS headers
 const corsHeaders = {
@@ -66,6 +67,20 @@ export default {
         return handleStatus(tableId, env);
       }
 
+      // ✅ EXPORT ENDPOINTS (YENİ!)
+      if (path === '/api/export/create' && request.method === 'POST') {
+        return handleExportCreate(request, env);
+      }
+
+      if (path.startsWith('/api/export/status/') && request.method === 'GET') {
+        const jobId = path.split('/').pop();
+        return handleExportStatus(jobId, env);
+      }
+
+      if (path === '/api/export/callback' && request.method === 'POST') {
+        return handleExportCallback(request, env);
+      }
+
       // 404
       return jsonResponse({ error: 'Endpoint bulunamadı' }, 404);
 
@@ -102,4 +117,3 @@ function jsonResponse(data, status = 200) {
     },
   });
 }
-

@@ -1,0 +1,36 @@
+# n8n Custom Docker Image - Lightweight
+# Base: Official n8n image
+# Added: Python 3.11 + Essential libraries only
+
+FROM n8nio/n8n:latest
+
+# Switch to root to install packages
+USER root
+
+# Install Python and minimal dependencies
+RUN apk add --no-cache \
+    python3 \
+    py3-pip \
+    python3-dev \
+    build-base \
+    jpeg-dev \
+    zlib-dev
+
+# Create symlinks
+RUN ln -sf /usr/bin/python3 /usr/bin/python && \
+    ln -sf /usr/bin/pip3 /usr/bin/pip
+
+# Install ONLY essential libraries (no pandas - it's huge!)
+RUN pip3 install --no-cache-dir --break-system-packages openpyxl==3.1.2
+RUN pip3 install --no-cache-dir --break-system-packages reportlab==4.0.7
+
+# Verify installations
+RUN python3 --version && \
+    python3 -c "import openpyxl; import reportlab; print('✅ Essential libraries OK!')"
+
+# Switch back to n8n user
+USER node
+
+# Environment variables
+ENV PYTHONUNBUFFERED=1
+ENV N8N_PYTHON_PATH=/usr/bin/python3
