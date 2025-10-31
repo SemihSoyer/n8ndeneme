@@ -1,5 +1,16 @@
 import { API_URL } from '../config';
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8787';
+
+// Hata yönetimi ve yanıtları standartlaştırmak için yardımcı fonksiyon
+async function handleResponse(response) {
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Bilinmeyen sunucu hatası' }));
+    throw new Error(error.error || 'İstek başarısız oldu');
+  }
+  return response.json();
+}
+
 // Dosya yükleme
 export async function uploadDocument(file) {
   const formData = new FormData();
@@ -19,21 +30,19 @@ export async function uploadDocument(file) {
 }
 
 // Chat mesajı gönder
-export async function sendChatMessage(documentId, message) {
+export async function sendChatMessage(documentIds, message, template = 'genel-analiz') {
+  // Gelenin dizi olup olmadığını kontrol et, değilse diziye çevir
+  const ids = Array.isArray(documentIds) ? documentIds : [documentIds];
+  
+  const payload = { documentIds: ids, message, template };
+  console.log('API payload being sent:', payload);
+  
   const response = await fetch(`${API_URL}/api/chat`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ documentId, message }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
   });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Mesaj gönderilemedi');
-  }
-
-  return response.json();
+  return handleResponse(response);
 }
 
 // Chat mesajlarını getir

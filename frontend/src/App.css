@@ -21,13 +21,13 @@ body {
 
 .app-header {
   text-align: center;
-  padding: 60px 20px 40px;
+  padding: 30px 20px 20px;
   color: white;
 }
 
 .app-header h1 {
-  margin: 0 0 10px 0;
-  font-size: 42px;
+  margin: 0;
+  font-size: 32px;
   font-weight: 700;
 }
 

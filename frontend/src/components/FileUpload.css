@@ -25,8 +25,9 @@
 }
 
 .upload-icon {
-  font-size: 64px;
-  margin-bottom: 20px;
+  font-size: 50px;
+  margin-bottom: 15px;
+  color: #667eea;
 }
 
 .file-upload-area h3 {
@@ -97,5 +98,104 @@
   color: #c62828;
   border-radius: 8px;
   border-left: 4px solid #c62828;
+}
+
+/* File Preview Styles */
+.file-preview-container {
+  padding: 30px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+  width: 100%;
+  max-width: 600px;
+  text-align: center;
+}
+
+.file-preview-container h4 {
+  margin-top: 0;
+  margin-bottom: 20px;
+  color: #333;
+  font-size: 18px;
+}
+
+.file-list {
+  list-style: none;
+  padding: 0;
+  margin-bottom: 25px;
+  max-height: 200px;
+  overflow-y: auto;
+  text-align: left;
+}
+
+.file-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.file-item:last-child {
+  border-bottom: none;
+}
+
+.file-icon {
+  font-size: 20px;
+}
+
+.file-name {
+  flex-grow: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #555;
+}
+
+.file-size {
+  font-size: 13px;
+  color: #888;
+  flex-shrink: 0;
+}
+
+.button-group {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+}
+
+.upload-button, .cancel-button {
+  padding: 12px 25px;
+  border: none;
+  border-radius: 25px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+}
+
+.upload-button {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.upload-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(118, 75, 162, 0.3);
+}
+
+.upload-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.cancel-button {
+  background: #f0f0f0;
+  color: #555;
+  border: 2px solid transparent;
+}
+
+.cancel-button:hover:not(:disabled) {
+  background: #e0e0e0;
+  border-color: #ccc;
 }
 

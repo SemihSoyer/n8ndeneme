@@ -89,20 +89,39 @@ function generateTablePreview(tableData) {
     return 'Tablo verisi bulunamadı.';
   }
 
-  const headers = tableData.headers || Object.keys(tableData.rows[0]);
-  const rows = tableData.rows.slice(0, 5); // İlk 5 satır
+  // N8N'den gelen format: { columns: [], rows: [[]] }
+  const columns = tableData.columns || tableData.headers || [];
+  const rows = tableData.rows || [];
+  
+  // Array formatında mı object formatında mı?
+  const isArrayFormat = rows.length > 0 && Array.isArray(rows[0]);
+  
+  const previewRows = rows.slice(0, 5); // İlk 5 satır
 
   let preview = '```\n';
-  preview += headers.join(' | ') + '\n';
-  preview += headers.map(() => '---').join(' | ') + '\n';
+  preview += columns.join(' | ') + '\n';
+  preview += columns.map(() => '---').join(' | ') + '\n';
   
-  rows.forEach(row => {
-    const values = headers.map(h => row[h] || '');
+  previewRows.forEach(row => {
+    let values;
+    if (isArrayFormat) {
+      // Array formatı: her satır bir dizi
+      values = columns.map((col, idx) => {
+        const cell = row[idx];
+        return cell !== undefined && cell !== null ? String(cell) : '-';
+      });
+    } else {
+      // Object formatı: her satır bir obje
+      values = columns.map(col => {
+        const cell = row[col];
+        return cell !== undefined && cell !== null ? String(cell) : '-';
+      });
+    }
     preview += values.join(' | ') + '\n';
   });
 
-  if (tableData.rows.length > 5) {
-    preview += `... ve ${tableData.rows.length - 5} satır daha\n`;
+  if (rows.length > 5) {
+    preview += `... ve ${rows.length - 5} satır daha\n`;
   }
 
   preview += '```';

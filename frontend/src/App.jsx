@@ -1,18 +1,28 @@
 import { useState } from 'react';
 import FileUpload from './components/FileUpload';
+import TemplateSelector from './components/TemplateSelector';
 import ChatInterface from './components/ChatInterface';
 import './App.css';
 
 function App() {
-  const [uploadedDocument, setUploadedDocument] = useState(null);
+  const [uploadedDocuments, setUploadedDocuments] = useState([]);
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [showChat, setShowChat] = useState(false);
 
-  const handleUploadSuccess = (document) => {
-    setUploadedDocument(document);
+  const handleUploadSuccess = (documents) => {
+    setUploadedDocuments(documents);
+  };
+
+  const handleTemplateSelect = (template) => {
+    setSelectedTemplate(template);
+    setShowChat(true);
   };
 
   const handleReset = () => {
-    if (confirm('Yeni bir belge yüklemek ister misiniz?')) {
-      setUploadedDocument(null);
+    if (confirm('Yeni belgeler yüklemek ister misiniz?')) {
+      setUploadedDocuments([]);
+      setSelectedTemplate(null);
+      setShowChat(false);
     }
   };
 
@@ -23,16 +33,24 @@ function App() {
       </header>
 
       <main className="app-main">
-        {!uploadedDocument ? (
+        {uploadedDocuments.length === 0 ? (
           <FileUpload onUploadSuccess={handleUploadSuccess} />
+        ) : !showChat ? (
+          <TemplateSelector 
+            onTemplateSelect={setSelectedTemplate}
+            onContinue={handleTemplateSelect}
+          />
         ) : (
           <>
             <div className="reset-container">
               <button className="reset-button" onClick={handleReset}>
-                ← Yeni Belge Yükle
+                ← Yeni Belgeler Yükle
               </button>
             </div>
-            <ChatInterface document={uploadedDocument} />
+            <ChatInterface 
+              documents={uploadedDocuments} 
+              template={selectedTemplate}
+            />
           </>
         )}
       </main>

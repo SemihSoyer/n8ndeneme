@@ -9,19 +9,36 @@ export default function TableDisplay({ data }) {
     );
   }
 
-  const headers = data.headers || Object.keys(data.rows[0]);
+  // N8N'den gelen format: { columns: [], rows: [[]] }
+  const columns = data.columns || data.headers || [];
+  const rows = data.rows || [];
+
+  // Rows array formatında mı object formatında mı kontrol et
+  const isArrayFormat = rows.length > 0 && Array.isArray(rows[0]);
 
   const downloadCSV = () => {
     // CSV oluştur
-    let csv = headers.join(',') + '\n';
-    data.rows.forEach(row => {
-      const values = headers.map(h => {
-        const value = row[h] || '';
-        // Virgül içeren değerleri tırnak içine al
-        return typeof value === 'string' && value.includes(',') 
-          ? `"${value}"` 
-          : value;
-      });
+    let csv = columns.join(',') + '\n';
+    
+    rows.forEach(row => {
+      let values;
+      if (isArrayFormat) {
+        // Array formatı: her satır bir dizi
+        values = row.map((cell, idx) => {
+          const value = cell !== undefined && cell !== null ? String(cell) : '';
+          return value.includes(',') || value.includes('"') 
+            ? `"${value.replace(/"/g, '""')}"` 
+            : value;
+        });
+      } else {
+        // Object formatı: her satır bir obje
+        values = columns.map(col => {
+          const value = row[col] !== undefined && row[col] !== null ? String(row[col]) : '';
+          return value.includes(',') || value.includes('"') 
+            ? `"${value.replace(/"/g, '""')}"` 
+            : value;
+        });
+      }
       csv += values.join(',') + '\n';
     });
 
@@ -29,7 +46,7 @@ export default function TableDisplay({ data }) {
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `tablo_${new Date().getTime()}.csv`;
+    link.download = `tablo_${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
   };
 
@@ -46,17 +63,35 @@ export default function TableDisplay({ data }) {
         <table className="data-table">
           <thead>
             <tr>
-              {headers.map((header, index) => (
-                <th key={index}>{header}</th>
+              {columns.map((column, index) => (
+                <th key={index}>{column}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {data.rows.map((row, rowIndex) => (
+            {rows.map((row, rowIndex) => (
               <tr key={rowIndex}>
-                {headers.map((header, colIndex) => (
-                  <td key={colIndex}>{row[header]}</td>
-                ))}
+                {columns.map((column, colIndex) => {
+                  let cellValue;
+                  if (isArrayFormat) {
+                    // Array formatı: index ile erişim
+                    cellValue = row[colIndex];
+                  } else {
+                    // Object formatı: key ile erişim
+                    cellValue = row[column];
+                  }
+                  
+                  // Boş hücreleri göster
+                  const displayValue = cellValue !== undefined && cellValue !== null 
+                    ? String(cellValue) 
+                    : '-';
+                  
+                  return (
+                    <td key={colIndex}>
+                      {displayValue}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
@@ -64,7 +99,7 @@ export default function TableDisplay({ data }) {
       </div>
 
       <div className="table-footer">
-        Toplam {data.rows.length} satır
+        Toplam {rows.length} satır • {columns.length} sütun
       </div>
     </div>
   );

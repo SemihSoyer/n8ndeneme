@@ -1,0 +1,787 @@
+{
+  "name": "29 EKİM 18.03 - Template Destekli",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "document-analysis",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "f6c5fe2b-4cae-4161-a3c8-dfd705e2ec0c",
+      "name": "Webhook1",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -1168,
+        448
+      ],
+      "webhookId": "generate-new-id"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Webhook'tan gelen document_ids dizisini item'lara split et\nconst webhookData = $input.item.json.body;\nconst documentIds = webhookData.document_ids;\nconst template = webhookData.template || 'genel-analiz'; // Template bilgisini al\n\nconsole.log('Webhook data:', JSON.stringify(webhookData, null, 2));\nconsole.log('Document IDs:', documentIds);\nconsole.log('Template:', template);\n\nif (!documentIds || !Array.isArray(documentIds)) {\n  throw new Error('document_ids dizisi bulunamadı veya geçersiz. Gelen veri: ' + JSON.stringify(webhookData));\n}\n\nif (documentIds.length === 0) {\n  throw new Error('document_ids dizisi boş');\n}\n\n// Her document_id için ayrı bir item oluştur\nreturn documentIds.map(docId => {\n  console.log('Processing document ID:', docId);\n  return {\n    json: {\n      document_id: docId,\n      table_id: webhookData.table_id,\n      user_request: webhookData.user_request,\n      template: template, // Template bilgisini ekle\n      callback_url: webhookData.callback_url\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1008,
+        448
+      ],
+      "id": "48aa26ee-c66a-4818-84e7-85e2852eef75",
+      "name": "Split Document IDs1"
+    },
+    {
+      "parameters": {
+        "url": "=https://document-analysis-api.sunmateapplication.workers.dev/api/documents/{{ $json.document_id }}/download",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer n8n-test-secret-2025"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "19a4bc72-3412-4ab8-9759-6b418e076b73",
+      "name": "Belgeyi İndir (R2)1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -608,
+        448
+      ],
+      "notes": "R2'den belgeyi indir"
+    },
+    {
+      "parameters": {
+        "jsCode": "// İndirilen belgenin MIME türünü kontrol et\nconst binaryData = $input.item.binary.data;\n\nif (!binaryData) {\n  throw new Error('Binary data bulunamadı');\n}\n\nconst mimeType = binaryData.mimeType;\nconst fileName = binaryData.fileName || '';\nconst fileExtension = fileName.toLowerCase().split('.').pop();\n\n// Hem MIME type hem de uzantıya bak\nconst isPdf = mimeType === 'application/pdf' || \n              mimeType === 'application/x-pdf' ||\n              fileExtension === 'pdf';\n\nconsole.log('Belge MIME türü:', mimeType);\nconsole.log('Dosya adı:', fileName);\nconsole.log('Uzantı:', fileExtension);\nconsole.log('PDF mi?', isPdf);\n\n// Orijinal veriyi Split Document IDs'den al\nconst originalData = $('Split Document IDs1').item.json;\n\nreturn {\n  json: {\n    isPdf: isPdf,\n    mimeType: mimeType,\n    fileName: fileName,\n    // Orijinal veriyi koru\n    document_id: originalData.document_id,\n    table_id: originalData.table_id,\n    user_request: originalData.user_request,\n    template: originalData.template, // Template bilgisini koru\n    callback_url: originalData.callback_url\n  },\n  binary: {\n    data: binaryData\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -432,
+        448
+      ],
+      "id": "45c0dabe-b28c-44e0-b732-a725ed5f30ba",
+      "name": "PDF Kontrol1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "id-1",
+              "leftValue": "={{ $json.isPdf }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "3d56ce88-b44a-4186-971f-5c3564e843e4",
+      "name": "PDF mi?1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -272,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "binaryToPropery",
+        "destinationKey": "base64Data",
+        "options": {}
+      },
+      "id": "6f5f13f5-baea-459f-a77f-b9061a5f8efe",
+      "name": "Extract from File1",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        -48,
+        544
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://vision.googleapis.com/v1/images:annotate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "=    {\n      \"requests\": [\n        {\n          \"image\": {\n            \"content\": \"{{ $('Extract from File1').item.json.base64Data }}\"\n          },\n          \"features\": [\n            {\n              \"type\": \"DOCUMENT_TEXT_DETECTION\"\n            }\n          ]\n        }\n      ]\n    }",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        128,
+        544
+      ],
+      "id": "7f8d82e1-c71c-4694-8958-308d461f99af",
+      "name": "Google Vision API1",
+      "credentials": {
+        "googleApi": {
+          "id": "YI2v24KDd4fiF7oj",
+          "name": "google api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const responses = $input.item.json.responses;\n\n// If the responses array is missing or empty, throw an error.\nif (!responses || responses.length === 0) {\n  throw new Error('No valid response received from the Google Vision API.');\n}\n\nlet fullText = '';\n\n// Combine the text from all pages, separated by a page break marker.\nfor (const response of responses) {\n  if (response.fullTextAnnotation && response.fullTextAnnotation.text) {\n    fullText += response.fullTextAnnotation.text + '\\n\\n--- Page Break ---\\n\\n';\n  }\n}\n\n// If no text could be extracted from any page, throw an error.\nif (fullText.trim() === '') {\n    throw new Error('No text could be extracted from the document.');\n}\n\n// PDF Kontrol node'undan orijinal veriyi al\nconst originalData = $('PDF Kontrol1').item.json;\n\n// Send the combined text to the next node.\nreturn {\n  json: {\n    allPagesText: fullText,\n    user_request: originalData.user_request,\n    table_id: originalData.table_id,\n    document_id: originalData.document_id,\n    template: originalData.template, // Template bilgisini koru\n    callback_url: originalData.callback_url\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        304,
+        544
+      ],
+      "id": "2264a03d-6c5a-49ed-8800-3bf10e813657",
+      "name": "Combine Pages1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const mistralResponse = $input.item.json;\n\nconsole.log('Mistral OCR Response:', JSON.stringify(mistralResponse, null, 2));\n\nlet extractedText = '';\n\n// ✅ Tüm sayfaları birleştir\nif (mistralResponse.pages && mistralResponse.pages.length > 0) {\n  extractedText = mistralResponse.pages\n    .map(p => `--- Sayfa ${p.page_number} ---\\n${p.markdown || p.text || ''}`)\n    .join('\\n\\n');\n}\n\n// Alternatif formatlar\nif (!extractedText && mistralResponse.choices && mistralResponse.choices.length > 0) {\n  const choice = mistralResponse.choices[0];\n  if (choice.message && choice.message.content) {\n    extractedText = choice.message.content;\n  }\n}\n\nif (!extractedText && mistralResponse.content) extractedText = mistralResponse.content;\nif (!extractedText && mistralResponse.text) extractedText = mistralResponse.text;\n\nif (!extractedText.trim()) {\n  throw new Error('Mistral OCR metin çıkaramadı.');\n}\n\nconst originalData = $('PDF Kontrol1').item.json;\n\nreturn {\n  json: {\n    allPagesText: extractedText,\n    user_request: originalData.user_request,\n    table_id: originalData.table_id,\n    document_id: originalData.document_id,\n    template: originalData.template, // Template bilgisini koru\n    callback_url: originalData.callback_url\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        352
+      ],
+      "id": "54290262-66b5-44f4-87eb-8069d94ad30a",
+      "name": "Process Mistral Text1"
+    },
+    {
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{ $json.template }}",
+        "rules": {
+          "rules": [
+            {
+              "value2": "fatura"
+            },
+            {
+              "value2": "fis-dekont",
+              "output": 1
+            },
+            {
+              "value2": "tablo",
+              "output": 2
+            },
+            {
+              "value2": "sozlesme",
+              "output": 3
+            },
+            {
+              "value2": "genel-analiz",
+              "output": 4
+            }
+          ]
+        },
+        "fallbackOutput": 4
+      },
+      "id": "template-router",
+      "name": "Template Router",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [
+        688,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=Sen bir FATURA analiz uzmanısın. Aşağıdaki belgeden FATURA bilgilerini çıkarıp yapılandırılmış tablo oluşturacaksın.\n\n**FATURA ANALİZ KURALLARI:**\n1. Fatura numarası, tarihi, düzenleyen firma bilgileri\n2. Alıcı firma/müşteri bilgileri (ad, vergi no, adres)\n3. Ürün/hizmet detayları (miktar, birim fiyat, tutar)\n4. KDV oranları ve tutarları\n5. Toplam tutar, ödenecek tutar\n6. Vade tarihi varsa ekle\n\n**ÇIKTI FORMATI:**\nYanıtını SADECE JSON formatında ver:\n{\n  \"columns\": [\"Alan\", \"Değer\"],\n  \"rows\": [\n    [\"Fatura No\", \"...\"],\n    [\"Fatura Tarihi\", \"...\"],\n    [\"Satıcı Firma\", \"...\"],\n    [\"Alıcı Firma\", \"...\"],\n    [\"Ürün/Hizmet\", \"...\"],\n    [\"Miktar\", \"...\"],\n    [\"Birim Fiyat\", \"...\"],\n    [\"Tutar\", \"...\"],\n    [\"KDV %\", \"...\"],\n    [\"KDV Tutarı\", \"...\"],\n    [\"Genel Toplam\", \"...\"]\n  ]\n}\n\n**KULLANICI İSTEĞİ:**\n{{ $json.user_request }}\n\n**BELGE İÇERİĞİ:**\n{{ $json.allPagesText }}"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        960,
+        224
+      ],
+      "id": "ai-model-fatura",
+      "name": "AI Model - Fatura",
+      "credentials": {
+        "openAiApi": {
+          "id": "J9W6EARqjWBvPiB2",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=Sen bir FİŞ/DEKONT analiz uzmanısın. Aşağıdaki belgeden fiş veya dekont bilgilerini çıkarıp yapılandırılmış tablo oluşturacaksın.\n\n**FİŞ/DEKONT ANALİZ KURALLARI:**\n1. İşlem tarihi ve saati\n2. İşlem türü (alım, satım, ödeme, tahsilat)\n3. İşlem tutarı ve para birimi\n4. Ödeme yöntemi (nakit, kredi kartı, havale vb.)\n5. İşlem yapan kişi/firma bilgileri\n6. Referans/işlem numarası\n7. Açıklama veya not varsa\n\n**ÇIKTI FORMATI:**\nYanıtını SADECE JSON formatında ver:\n{\n  \"columns\": [\"Alan\", \"Değer\"],\n  \"rows\": [\n    [\"İşlem Tarihi\", \"...\"],\n    [\"İşlem Saati\", \"...\"],\n    [\"İşlem Türü\", \"...\"],\n    [\"İşlem Tutarı\", \"...\"],\n    [\"Para Birimi\", \"...\"],\n    [\"Ödeme Yöntemi\", \"...\"],\n    [\"Firma/Kişi\", \"...\"],\n    [\"Referans No\", \"...\"],\n    [\"Açıklama\", \"...\"]\n  ]\n}\n\n**KULLANICI İSTEĞİ:**\n{{ $json.user_request }}\n\n**BELGE İÇERİĞİ:**\n{{ $json.allPagesText }}"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        960,
+        336
+      ],
+      "id": "ai-model-fis-dekont",
+      "name": "AI Model - Fiş Dekont",
+      "credentials": {
+        "openAiApi": {
+          "id": "J9W6EARqjWBvPiB2",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=Sen bir TABLO çıkarma uzmanısın. Belgedeki TÜM tabloları bulup, kullanıcının isteğine göre yapılandırılmış formata dönüştüreceksin.\n\n**TABLO ÇIKARMA KURALLARI:**\n1. Belgedeki TÜM tabloları tespit et\n2. Tablo başlıklarını doğru al\n3. Satır ve sütun ilişkilerini koru\n4. Birden fazla tablo varsa birleştir\n5. Sayısal değerleri ve formatları koru\n6. Boş hücreleri boş bırak\n\n**ÖNEMLİ:** \n- Markdown table syntax'ını (| ve ---) doğru parse et\n- Hücrelerdeki birleşik alanları ayır\n- Tablo dışındaki metinleri dahil etme\n\n**ÇIKTI FORMATI:**\nYanıtını SADECE JSON formatında ver:\n{\n  \"columns\": [\"Sütun1\", \"Sütun2\", \"Sütun3\", ...],\n  \"rows\": [\n    [\"Değer1\", \"Değer2\", \"Değer3\", ...],\n    [\"Değer1\", \"Değer2\", \"Değer3\", ...]\n  ]\n}\n\n**KULLANICI İSTEĞİ:**\n{{ $json.user_request }}\n\n**BELGE İÇERİĞİ:**\n{{ $json.allPagesText }}"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        960,
+        448
+      ],
+      "id": "ai-model-tablo",
+      "name": "AI Model - Tablo",
+      "credentials": {
+        "openAiApi": {
+          "id": "J9W6EARqjWBvPiB2",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=Sen bir SÖZLEŞME analiz uzmanısın. Aşağıdaki sözleşme belgesinden önemli bilgileri çıkarıp yapılandırılmış tablo oluşturacaksın.\n\n**SÖZLEŞME ANALİZ KURALLARI:**\n1. Tarafların tam isimleri ve unvanları\n2. Sözleşme tarihi ve süresi\n3. Sözleşme konusu ve türü\n4. Önemli maddeler ve yükümlülükler\n5. Ödeme koşulları varsa\n6. Cezai şartlar varsa\n7. İmza yetkilileri\n8. Fesih koşulları\n\n**ÇIKTI FORMATI:**\nYanıtını SADECE JSON formatında ver:\n{\n  \"columns\": [\"Madde/Bölüm\", \"İçerik\"],\n  \"rows\": [\n    [\"Sözleşme Türü\", \"...\"],\n    [\"Taraf 1\", \"...\"],\n    [\"Taraf 2\", \"...\"],\n    [\"Sözleşme Tarihi\", \"...\"],\n    [\"Süre\", \"...\"],\n    [\"Konu\", \"...\"],\n    [\"Ödeme Koşulları\", \"...\"],\n    [\"Önemli Maddeler\", \"...\"],\n    [\"Cezai Şartlar\", \"...\"],\n    [\"Fesih Koşulları\", \"...\"],\n    [\"İmza Yetkilileri\", \"...\"]\n  ]\n}\n\n**KULLANICI İSTEĞİ:**\n{{ $json.user_request }}\n\n**BELGE İÇERİĞİ:**\n{{ $json.allPagesText }}"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        960,
+        560
+      ],
+      "id": "ai-model-sozlesme",
+      "name": "AI Model - Sözleşme",
+      "credentials": {
+        "openAiApi": {
+          "id": "J9W6EARqjWBvPiB2",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=Sen bir belge analiz asistanısın. Kullanıcının isteğine göre belgeden tablo oluşturacaksın. Eğer kullanıcı hiçbir istekte bulunmamışsa, sana gelen verileri mantıklı bir şekilde tablo haline getireceksin. Kafana göre ekstra eklemeler yapmayacaksın, satır ve sütun tekrarlarından kaçınacaksın.\nKullanıcı eğer belirsiz bir istekte bulunursa tekrardan gelen verilerin tamamını mantık çerçevesi içerisinde tablo haline getireceksin.\n\n**ANALİZ KURALLARI:**\n1. Kullanıcının isteğini dikkatlice oku\n2. Belgede ilgili bilgileri bul\n3. Mantıklı sütunlar oluştur\n4. Her satır farklı bir kayıt olmalı\n5. Sayısal değerleri ve para birimlerini koru\n\n**ÖNEMLİ:** Belge içeriği markdown table formatında gelebilir. \nMarkdown syntax'ını (| karakterleri, --- satırları) doğru parse et.\n\n**ÇIKTI FORMATI:**\nYanıtını SADECE JSON formatında ver:\n{\n  \"columns\": [\"Sütun1\", \"Sütun2\"],\n  \"rows\": [\n    [\"Değer1\", \"Değer2\"]\n  ]\n}\n\n**KULLANICI İSTEĞİ:**\n{{ $json.user_request }}\n\n**BELGE İÇERİĞİ:**\n{{ $json.allPagesText }}\n\n**TALİMAT:** Kullanıcının isteğine uygun, mantıklı ve kullanışlı bir tablo oluştur."
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        960,
+        672
+      ],
+      "id": "ai-model-genel",
+      "name": "AI Model - Genel Analiz",
+      "credentials": {
+        "openAiApi": {
+          "id": "J9W6EARqjWBvPiB2",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$('Split Document IDs1').first().json.callback_url}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.payload }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -272,
+        240
+      ],
+      "id": "6f3bf43c-948e-4288-90d7-d0b2eb8374b9",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -816,
+        448
+      ],
+      "id": "4ce07086-da68-4d18-8451-d635deb70386",
+      "name": "Loop Over Items1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop'un her bir adımından gelen tüm sonuçları alıyoruz.\nconst allLoopItems = $input.all();\n\nconsole.log('Combine Results - Total items:', allLoopItems.length);\n\n// Boş bir nihai tablo yapısı oluşturuyoruz.\nconst finalTable = {\n  columns: [],\n  rows: []\n};\n\nconst allColumns = new Set();\n\n// Gelen tüm veriler üzerinde döngüye gir.\nfor (const item of allLoopItems) {\n  console.log('Processing item:', JSON.stringify(item.json, null, 2));\n  \n  // message veya content alanı yoksa bu elemanı atla\n  if (!item.json.message || item.json.message.content === undefined) {\n    console.warn('Skipping item due to missing message or content:', item.json);\n    continue;\n  }\n  // Modelin çıktısı bazen stringified JSON olabilir, bu yüzden parse edelim.\n  let modelContent;\n  try {\n    modelContent = (typeof item.json.message.content === 'string')\n      ? JSON.parse(item.json.message.content)\n      : item.json.message.content;\n  } catch (e) {\n    console.warn('Skipping an item due to JSON parsing error:', item.json.message.content);\n    continue; // Bu öğeyi atla ve devam et.\n  }\n  \n  // Sütunları ve satırları al.\n  const { columns, rows } = modelContent;\n\n  if (columns && Array.isArray(columns)) {\n    columns.forEach(col => allColumns.add(col));\n  }\n\n  if (rows && Array.isArray(rows)) {\n    // Her bir satırı nihai tabloya ekle.\n    finalTable.rows.push(...rows);\n  }\n}\n\n// Tüm benzersiz sütunları nihai tabloya ekle.\nfinalTable.columns = Array.from(allColumns);\n\nconsole.log('Final table:', JSON.stringify(finalTable, null, 2));\n\n// Split Document IDs node'undan gelen orijinal veriyi alıyoruz\nconst originalData = $('Split Document IDs1').first().json;\n\nconsole.log('Original data:', JSON.stringify(originalData, null, 2));\n\n// Cloudflare'a gönderilecek son payload'u oluşturuyoruz.\nconst payload = {\n  table_id: originalData.table_id,\n  document_id: originalData.document_id, // İlk belgenin ID'si\n  status: 'completed',\n  table_data: finalTable\n};\n\nconsole.log('Callback payload:', JSON.stringify(payload, null, 2));\n\n// Sonucu bir sonraki HTTP Request düğümüne gönder.\nreturn {\n  json: {\n    payload: payload\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -432,
+        240
+      ],
+      "id": "fc33cc11-b882-4f10-bf9f-bc5aaa52dc95",
+      "name": "Combine Results1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.mistral.ai/v1/ocr",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "mistralCloudApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"mistral-ocr-latest\",\n  \"document\": {\n    \"type\": \"document_url\",\n    \"document_url\": \"{{ $json.url }}\"\n  },\n  \"include_image_base64\": true\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        304,
+        352
+      ],
+      "id": "12a17061-c129-4edf-b9f2-88ced00c7de1",
+      "name": "mistral OCR1",
+      "credentials": {
+        "mistralCloudApi": {
+          "id": "EZP4pKQGAcqfDc52",
+          "name": "Mistral Cloud account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.mistral.ai/v1/files/{{ $json.id }}/url",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "mistralCloudApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "expiry",
+              "value": "24"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        128,
+        352
+      ],
+      "id": "d8a0c973-2e6e-4127-bda1-0e16351d4f4d",
+      "name": "Signed URL1",
+      "credentials": {
+        "mistralCloudApi": {
+          "id": "EZP4pKQGAcqfDc52",
+          "name": "Mistral Cloud account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.mistral.ai/v1/files",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "mistralCloudApi",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "purpose",
+              "value": "ocr"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -48,
+        352
+      ],
+      "id": "2969172c-8e68-4ad1-9cb4-1b573b6a13ff",
+      "name": "Upload Mistral1",
+      "credentials": {
+        "mistralCloudApi": {
+          "id": "EZP4pKQGAcqfDc52",
+          "name": "Mistral Cloud account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook1": {
+      "main": [
+        [
+          {
+            "node": "Split Document IDs1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Document IDs1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Belgeyi İndir (R2)1": {
+      "main": [
+        [
+          {
+            "node": "PDF Kontrol1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PDF Kontrol1": {
+      "main": [
+        [
+          {
+            "node": "PDF mi?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PDF mi?1": {
+      "main": [
+        [
+          {
+            "node": "Upload Mistral1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract from File1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File1": {
+      "main": [
+        [
+          {
+            "node": "Google Vision API1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Vision API1": {
+      "main": [
+        [
+          {
+            "node": "Combine Pages1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Pages1": {
+      "main": [
+        [
+          {
+            "node": "Template Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Mistral Text1": {
+      "main": [
+        [
+          {
+            "node": "Template Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Template Router": {
+      "main": [
+        [
+          {
+            "node": "AI Model - Fatura",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Model - Fiş Dekont",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Model - Tablo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Model - Sözleşme",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Model - Genel Analiz",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Model - Fatura": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Model - Fiş Dekont": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Model - Tablo": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Model - Sözleşme": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Model - Genel Analiz": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items1": {
+      "main": [
+        [
+          {
+            "node": "Combine Results1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Belgeyi İndir (R2)1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Results1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "mistral OCR1": {
+      "main": [
+        [
+          {
+            "node": "Process Mistral Text1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Signed URL1": {
+      "main": [
+        [
+          {
+            "node": "mistral OCR1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Mistral1": {
+      "main": [
+        [
+          {
+            "node": "Signed URL1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

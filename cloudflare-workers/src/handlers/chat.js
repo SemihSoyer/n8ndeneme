@@ -1,54 +1,53 @@
 // Chat mesajları handler'ı
 export async function handleChat(request, env, ctx) {
   try {
-    const { documentId, message } = await request.json();
+    // Gelen veri güncellendi: documentId -> documentIds ve template eklendi
+    const requestBody = await request.json();
+    console.log('Backend received request body:', JSON.stringify(requestBody, null, 2));
+    
+    const { documentIds, message, template = 'genel-analiz' } = requestBody;
+    console.log('Extracted template:', template);
 
-    if (!documentId || !message) {
-      return jsonResponse({ error: 'documentId ve message gerekli' }, 400);
+    // Kontrol güncellendi: documentIds'nin bir dizi olduğunu kontrol et
+    if (!documentIds || !Array.isArray(documentIds) || documentIds.length === 0 || !message) {
+      return jsonResponse({ error: 'documentIds (dizi) ve message gerekli' }, 400);
     }
+    
+    // Template validation
+    const validTemplates = ['fatura', 'fis-dekont', 'tablo', 'sozlesme', 'genel-analiz'];
+    const selectedTemplate = validTemplates.includes(template) ? template : 'genel-analiz';
+    console.log('Selected template after validation:', selectedTemplate);
+    
+    // NOT: Bu örnekte, her belgenin var olup olmadığını kontrol etmiyoruz
+    // Production'da bu kontrol eklenebilir.
 
-    // Belgenin var olup olmadığını kontrol et
-    const document = await env.DB.prepare(
-      'SELECT * FROM documents WHERE id = ?'
-    ).bind(documentId).first();
-
-    if (!document) {
-      return jsonResponse({ error: 'Belge bulunamadı' }, 404);
-    }
-
-    // Kullanıcı mesajını kaydet
+    // Kullanıcı mesajını sadece ilk belgeye bağlıyoruz (şimdilik)
+    const primaryDocumentId = documentIds[0];
     const chatMessageId = crypto.randomUUID();
     await env.DB.prepare(`
       INSERT INTO chat_messages (id, document_id, role, message)
       VALUES (?, ?, 'user', ?)
-    `).bind(chatMessageId, documentId, message).run();
+    `).bind(chatMessageId, primaryDocumentId, message).run();
 
-    // Generated table kaydı oluştur (processing durumunda)
+    // Toplu işlem için tek bir `tableId` oluşturuyoruz
     const tableId = crypto.randomUUID();
     await env.DB.prepare(`
       INSERT INTO generated_tables (id, document_id, chat_message_id, status)
       VALUES (?, ?, ?, 'processing')
-    `).bind(tableId, documentId, chatMessageId).run();
+    `).bind(tableId, primaryDocumentId, chatMessageId).run();
 
-    // Güvenli download URL'i oluştur (N8N için)
-    const workerUrl = new URL(request.url).origin;
-    const downloadUrl = `${workerUrl}/api/documents/${documentId}/download`;
 
-    // N8N'e webhook isteği gönder
+    // N8N'e gönderilecek payload güncellendi
     const n8nPayload = {
-      document_id: documentId,
-      chat_message_id: chatMessageId,
-      table_id: tableId,
-      download_url: downloadUrl,
-      api_secret: env.API_SECRET, // N8N'in dosyayı indirmesi için
+      table_id: tableId, // N8N'den geri gelecek olan işlem ID'si
+      document_ids: documentIds,
       user_request: message,
-      callback_url: `${workerUrl}/api/webhook/n8n`,
-      document_info: {
-        filename: document.filename,
-        file_type: document.file_type,
-        file_size: document.file_size
-      }
+      template: selectedTemplate, // Template bilgisini ekle
+      callback_url: `${new URL(request.url).origin}/api/webhook/n8n`,
+      api_secret: env.API_SECRET,
     };
+    
+    console.log('N8N Payload with template:', JSON.stringify(n8nPayload, null, 2));
 
     // N8N'e asenkron istek gönder (fire and forget)
     if (env.N8N_WEBHOOK_URL) {
@@ -72,25 +71,24 @@ export async function handleChat(request, env, ctx) {
       console.error('N8N_WEBHOOK_URL is not defined!');
     }
 
-    // Assistant mesajı ekle (processing)
+    // Asistan mesajı ekle (processing)
     const assistantMessageId = crypto.randomUUID();
     await env.DB.prepare(`
       INSERT INTO chat_messages (id, document_id, role, message)
       VALUES (?, ?, 'assistant', ?)
     `).bind(
       assistantMessageId, 
-      documentId, 
-      'Tablo oluşturuluyor, lütfen bekleyin...'
+      primaryDocumentId, 
+      `${documentIds.length} belge için tablo oluşturuluyor...`
     ).run();
 
     return jsonResponse({
       success: true,
-      chatMessageId,
-      tableId,
+      tableId: tableId, // Frontend'in durumu takip etmesi için
       assistantMessageId,
       status: 'processing',
-      message: 'İstek N8N\'e gönderildi'
-    }, 201);
+      message: `${documentIds.length} belge N8N'e gönderildi`
+    }, 202);
 
   } catch (error) {
     console.error('Chat error:', error);
