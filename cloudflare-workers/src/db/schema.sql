@@ -34,26 +34,26 @@ CREATE TABLE generated_tables (
   FOREIGN KEY (chat_message_id) REFERENCES chat_messages(id)
 );
 
--- export_jobs tablosu (Excel/PDF export için)
-CREATE TABLE export_jobs (
-  id TEXT PRIMARY KEY,
-  table_id TEXT NOT NULL,
-  format TEXT NOT NULL,
-  status TEXT DEFAULT 'pending',
-  r2_key TEXT,
-  file_url TEXT,
-  file_size INTEGER,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  started_at DATETIME,
-  completed_at DATETIME,
-  error_message TEXT,
-  FOREIGN KEY (table_id) REFERENCES generated_tables(id)
-);
+-- export_jobs tablosu (GELECEK İÇİN - ŞİMDİLİK KULLANILMIYOR)
+-- CREATE TABLE export_jobs (
+--   id TEXT PRIMARY KEY,
+--   table_id TEXT NOT NULL,
+--   format TEXT NOT NULL,
+--   status TEXT DEFAULT 'pending',
+--   r2_key TEXT,
+--   file_url TEXT,
+--   file_size INTEGER,
+--   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+--   started_at DATETIME,
+--   completed_at DATETIME,
+--   error_message TEXT,
+--   FOREIGN KEY (table_id) REFERENCES generated_tables(id)
+-- );
 
 -- İndeks'ler (performans için)
 CREATE INDEX idx_chat_messages_document ON chat_messages(document_id);
 CREATE INDEX idx_generated_tables_document ON generated_tables(document_id);
 CREATE INDEX idx_generated_tables_status ON generated_tables(status);
-CREATE INDEX idx_export_jobs_table ON export_jobs(table_id);
-CREATE INDEX idx_export_jobs_status ON export_jobs(status);
-CREATE INDEX idx_export_jobs_created ON export_jobs(created_at DESC);
+-- CREATE INDEX idx_export_jobs_table ON export_jobs(table_id);
+-- CREATE INDEX idx_export_jobs_status ON export_jobs(status);
+-- CREATE INDEX idx_export_jobs_created ON export_jobs(created_at DESC);
