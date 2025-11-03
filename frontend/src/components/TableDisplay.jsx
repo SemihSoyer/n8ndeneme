@@ -50,6 +50,42 @@ export default function TableDisplay({ data }) {
     });
   };
 
+  // data prop'u değiştiğinde tableData'yı güncelle
+  useEffect(() => {
+    console.log('📊 TableDisplay: data prop değişti', data);
+    if (!data || !data.rows || data.rows.length === 0) {
+      return;
+    }
+    
+    const columns = data.columns || data.headers || [];
+    const rows = data.rows || [];
+    
+    // Array format'ı object format'a çevir
+    const isArrayFormat = rows.length > 0 && Array.isArray(rows[0]);
+    
+    let newTableData;
+    if (isArrayFormat) {
+      const convertedRows = rows.map(row => {
+        const obj = {};
+        columns.forEach((col, idx) => {
+          obj[col] = row[idx] !== undefined && row[idx] !== null ? row[idx] : '';
+        });
+        return obj;
+      });
+      newTableData = { columns, rows: convertedRows };
+    } else {
+      newTableData = { columns, rows };
+    }
+    
+    console.log('📊 TableDisplay: tableData güncelleniyor', newTableData);
+    setTableData(newTableData);
+    
+    // History'yi sıfırla ve yeni veriyi ekle
+    const initialHistory = [JSON.parse(JSON.stringify(newTableData))];
+    setHistory(initialHistory);
+    setHistoryIndex(0);
+  }, [data]);
+
   // İlk veriyi history'ye ekle
   useEffect(() => {
     if (tableData.columns.length > 0 && history.length === 0) {

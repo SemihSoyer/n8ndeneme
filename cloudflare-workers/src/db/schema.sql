@@ -54,6 +54,21 @@ CREATE TABLE generated_tables (
 CREATE INDEX idx_chat_messages_document ON chat_messages(document_id);
 CREATE INDEX idx_generated_tables_document ON generated_tables(document_id);
 CREATE INDEX idx_generated_tables_status ON generated_tables(status);
--- CREATE INDEX idx_export_jobs_table ON export_jobs(table_id);
--- CREATE INDEX idx_export_jobs_status ON export_jobs(status);
--- CREATE INDEX idx_export_jobs_created ON export_jobs(created_at DESC);
+
+-- table_edits tablosu (AI tablo düzenleme için)
+-- FOREIGN KEY constraint'leri kaldırıldı (Cloudflare D1 uyumluluğu için)
+CREATE TABLE IF NOT EXISTS table_edits (
+  id TEXT PRIMARY KEY,
+  table_id TEXT NOT NULL,
+  document_id TEXT,
+  original_table_data TEXT NOT NULL,
+  edited_table_data TEXT,
+  prompt TEXT NOT NULL,
+  status TEXT DEFAULT 'processing',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  completed_at DATETIME,
+  error_message TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_table_edits_table ON table_edits(table_id);
+CREATE INDEX IF NOT EXISTS idx_table_edits_status ON table_edits(status);

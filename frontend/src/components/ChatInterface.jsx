@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { sendChatMessage, getChatMessages, getTableStatus } from '../services/api';
 import TableDisplay from './TableDisplay';
+import TableEditChat from './TableEditChat';
 import './ChatInterface.css';
 
 // Birden fazla dokümanı ve template bilgisini kabul edecek şekilde güncellendi
@@ -10,6 +11,7 @@ export default function ChatInterface({ documents, template }) {
   const [isSending, setIsSending] = useState(false);
   const [currentTableId, setCurrentTableId] = useState(null);
   const [tableData, setTableData] = useState(null);
+  const [finalTableId, setFinalTableId] = useState(null); // Tablo oluşturulduktan sonraki ID
   const messagesEndRef = useRef(null);
   const primaryDocument = documents[0]; // Ana doküman bilgisini gösterim için al
 
@@ -30,6 +32,7 @@ export default function ChatInterface({ documents, template }) {
         
         if (status.status === 'completed') {
           setTableData(status.tableData);
+          setFinalTableId(status.tableId || currentTableId); // Tablo ID'sini sakla
           setCurrentTableId(null); // Polling'i durdur
           await loadMessages(); // Mesajları güncelle
         } else if (status.status === 'failed') {
@@ -89,78 +92,90 @@ export default function ChatInterface({ documents, template }) {
   return (
     <div className={`chat-container ${tableData ? 'has-table' : ''}`}>
       <div className="chat-content-wrapper">
-        <div className="chat-header">
-          <div className="document-info">
-            <span className="doc-icon">📚</span>
-            <div>
-              <div className="doc-name">
-                {documents.length > 1 
-                  ? `${documents.length} belge yüklendi` 
-                  : primaryDocument.filename
-                }
-              </div>
-              <div className="doc-meta">
-                Toplam Boyut: {(documents.reduce((acc, doc) => acc + doc.fileSize, 0) / 1024).toFixed(1)} KB
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="chat-messages">
-          {messages.length === 0 ? (
-            <div className="empty-state">
-              <p>👋 Merhaba!</p>
-              <p>{template?.title && `${template.title} şablonu seçildi.`}</p>
-              <p>Bu belgeden nasıl bir tablo oluşturmamı istersiniz?</p>
-            </div>
-          ) : (
-            messages.map((msg, index) => (
-              <div key={msg.id || index} className={`message ${msg.role}`}>
-                <div className="message-avatar">
-                  {msg.role === 'user' ? '👤' : '🤖'}
-                </div>
-                <div className="message-content">
-                  <div className="message-text">{msg.message}</div>
-                  <div className="message-time">
-                    {new Date(msg.created_at).toLocaleTimeString('tr-TR')}
+        {!tableData ? (
+          // Belge analizi chat'i - tablo oluşturulana kadar
+          <>
+            <div className="chat-header">
+              <div className="document-info">
+                <span className="doc-icon">📚</span>
+                <div>
+                  <div className="doc-name">
+                    {documents.length > 1 
+                      ? `${documents.length} belge yüklendi` 
+                      : primaryDocument.filename
+                    }
+                  </div>
+                  <div className="doc-meta">
+                    Toplam Boyut: {(documents.reduce((acc, doc) => acc + doc.fileSize, 0) / 1024).toFixed(1)} KB
                   </div>
                 </div>
               </div>
-            ))
-          )}
-          
-          {currentTableId && (
-            <div className="message assistant">
-              <div className="message-avatar">🤖</div>
-              <div className="message-content">
-                <div className="processing-indicator">
-                  <div className="spinner-small"></div>
-                  <span>Tablo oluşturuluyor...</span>
-                </div>
-              </div>
             </div>
-          )}
 
-          <div ref={messagesEndRef} />
-        </div>
+            <div className="chat-messages">
+              {messages.length === 0 ? (
+                <div className="empty-state">
+                  <p>👋 Merhaba!</p>
+                  <p>{template?.title && `${template.title} şablonu seçildi.`}</p>
+                  <p>Bu belgeden nasıl bir tablo oluşturmamı istersiniz?</p>
+                </div>
+              ) : (
+                messages.map((msg, index) => (
+                  <div key={msg.id || index} className={`message ${msg.role}`}>
+                    <div className="message-avatar">
+                      {msg.role === 'user' ? '👤' : '🤖'}
+                    </div>
+                    <div className="message-content">
+                      <div className="message-text">{msg.message}</div>
+                      <div className="message-time">
+                        {new Date(msg.created_at).toLocaleTimeString('tr-TR')}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+              
+              {currentTableId && (
+                <div className="message assistant">
+                  <div className="message-avatar">🤖</div>
+                  <div className="message-content">
+                    <div className="processing-indicator">
+                      <div className="spinner-small"></div>
+                      <span>Tablo oluşturuluyor...</span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
-        <form className="chat-input-form" onSubmit={handleSend}>
-          <input
-            type="text"
-            className="chat-input"
-            placeholder="Nasıl bir tablo oluşturmamı istersiniz?"
-            value={inputMessage}
-            onChange={(e) => setInputMessage(e.target.value)}
-            disabled={isSending}
+              <div ref={messagesEndRef} />
+            </div>
+
+            <form className="chat-input-form" onSubmit={handleSend}>
+              <input
+                type="text"
+                className="chat-input"
+                placeholder="Nasıl bir tablo oluşturmamı istersiniz?"
+                value={inputMessage}
+                onChange={(e) => setInputMessage(e.target.value)}
+                disabled={isSending}
+              />
+              <button 
+                type="submit" 
+                className="send-button"
+                disabled={isSending || !inputMessage.trim()}
+              >
+                {isSending ? '⏳' : '📤'}
+              </button>
+            </form>
+          </>
+        ) : (
+          // Tablo düzenleme chat'i - tablo oluşturulduktan sonra
+          <TableEditChat
+            tableId={finalTableId}
+            tableData={tableData}
+            onTableUpdate={setTableData}
           />
-          <button 
-            type="submit" 
-            className="send-button"
-            disabled={isSending || !inputMessage.trim()}
-          >
-            {isSending ? '⏳' : '📤'}
-          </button>
-        </form>
+        )}
       </div>
 
       {tableData && (

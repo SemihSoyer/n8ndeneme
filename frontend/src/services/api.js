@@ -81,3 +81,32 @@ export async function getDocument(documentId) {
   return response.json();
 }
 
+// Tablo düzenleme - AI ile
+export async function editTableWithAI(tableId, tableData, prompt) {
+  const payload = {
+    table_id: tableId,
+    table_data: tableData,
+    prompt: prompt.trim(),
+  };
+
+  const response = await fetch(`${API_URL}/api/table/edit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  return handleResponse(response);
+}
+
+// Tablo düzenleme durumunu kontrol et
+export async function getTableEditStatus(editId) {
+  const response = await fetch(`${API_URL}/api/table/edit/status/${editId}`);
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Düzenleme durumu alınamadı');
+  }
+
+  return response.json();
+}
+

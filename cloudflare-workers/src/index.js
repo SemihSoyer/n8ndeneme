@@ -3,6 +3,7 @@ import { handleChat, handleGetMessages } from './handlers/chat.js';
 import { handleWebhook } from './handlers/webhook.js';
 import { handleStatus } from './handlers/status.js';
 import { handleDownload } from './handlers/download.js';
+import { handleTableEdit, handleTableEditStatus } from './handlers/tableEdit.js';
 
 // CORS headers
 const corsHeaders = {
@@ -64,6 +65,16 @@ export default {
       if (path.startsWith('/api/status/') && request.method === 'GET') {
         const tableId = path.split('/').pop();
         return handleStatus(tableId, env);
+      }
+
+      // Tablo düzenleme endpoints
+      if (path === '/api/table/edit' && request.method === 'POST') {
+        return handleTableEdit(request, env);
+      }
+
+      if (path.match(/^\/api\/table\/edit\/status\/[^\/]+$/) && request.method === 'GET') {
+        const editId = path.split('/').pop();
+        return handleTableEditStatus(editId, env);
       }
 
       // 404

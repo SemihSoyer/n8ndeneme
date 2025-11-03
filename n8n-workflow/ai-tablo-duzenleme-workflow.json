@@ -1,0 +1,274 @@
+{
+  "name": "AI Tablo Düzenleme Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "table-edit-ai",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-table-edit",
+      "name": "Webhook - Tablo Düzenleme",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "generate-new-id"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Tablo verisini validate et\nconst webhookData = $input.first().json.body || $input.first().json;\n\n// Gerekli alanları kontrol et\nconst tableData = webhookData.table_data;\nconst prompt = webhookData.prompt;\nconst editId = webhookData.edit_id;\nconst tableId = webhookData.table_id;\nconst callbackUrl = webhookData.callback_url;\n\n// Zorunlu alan kontrolü\nif (!tableData) {\n  throw new Error('table_data eksik');\n}\n\nif (!prompt) {\n  throw new Error('prompt eksik');\n}\n\nif (!editId) {\n  throw new Error('edit_id eksik');\n}\n\nif (!tableId) {\n  throw new Error('table_id eksik');\n}\n\nif (!callbackUrl) {\n  throw new Error('callback_url eksik');\n}\n\n// Tablo verisini parse et (eğer string ise)\nlet parsedTableData;\ntry {\n  parsedTableData = typeof tableData === 'string' ? JSON.parse(tableData) : tableData;\n} catch (e) {\n  throw new Error('table_data geçersiz JSON formatında: ' + e.message);\n}\n\n// Tablo yapısını kontrol et\nif (!parsedTableData.columns || !Array.isArray(parsedTableData.columns)) {\n  throw new Error('table_data.columns eksik veya array değil');\n}\n\nif (!parsedTableData.rows || !Array.isArray(parsedTableData.rows)) {\n  throw new Error('table_data.rows eksik veya array değil');\n}\n\nif (parsedTableData.columns.length === 0) {\n  throw new Error('table_data.columns boş');\n}\n\n// Her satırın sütun sayısını kontrol et\nfor (let i = 0; i < parsedTableData.rows.length; i++) {\n  const row = parsedTableData.rows[i];\n  if (!Array.isArray(row)) {\n    throw new Error(`table_data.rows[${i}] array değil`);\n  }\n  if (row.length !== parsedTableData.columns.length) {\n    console.warn(`Satır ${i} sütun sayısı uyuşmuyor (${row.length} vs ${parsedTableData.columns.length})`);\n  }\n}\n\n// Geçerli veriyi bir sonraki node'a ilet\nreturn {\n  json: {\n    table_data: parsedTableData,\n    prompt: prompt,\n    edit_id: editId,\n    table_id: tableId,\n    callback_url: callbackUrl\n  }\n};"
+      },
+      "id": "validate-table-data",
+      "name": "Validate Table Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=Sen bir tablo düzenleme uzmanısın. Verilen tablo verisini kullanıcının isteğine göre düzenleyeceksin.\n\n**ÖNEMLİ KURALLAR:**\n1. Mevcut sütun yapısını (columns) korumalısın\n2. Sadece istenen değişiklikleri yapmalısın\n3. Tablo formatını bozmamalısın\n4. Yeni satırlar eklersen, mevcut sütun yapısına uygun olmalı\n5. Satır sayısı değişse bile, her satır mutlaka tüm sütunları içermeli\n\n**MEVCUT TABLO VERİSİ:**\n{{ JSON.stringify($json.table_data, null, 2) }}\n\n**KULLANICI İSTEĞİ:**\n{{ $json.prompt }}\n\n**TALİMAT:**\nYukarıdaki tablo verisini kullanıcının isteğine göre düzenle. Sadece JSON formatında düzenlenmiş tablo verisini döndür. Hiçbir açıklama metni ekleme.\n\n**ÇIKTI FORMATI:**\nYanıtını SADECE JSON formatında ver (açıklama metni olmadan):\n{\n  \"columns\": [\"Sütun1\", \"Sütun2\", \"Sütun3\", ...],\n  \"rows\": [\n    [\"Değer1\", \"Değer2\", \"Değer3\", ...],\n    [\"Değer1\", \"Değer2\", \"Değer3\", ...]\n  ]\n}\n\nÖNEMLİ: Yanıtında sadece JSON olmalı, başka hiçbir metin olmamalı. Markdown code block (```json) kullanma."
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "options": {}
+      },
+      "id": "ai-model-edit",
+      "name": "AI Model - Tablo Düzenleme",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [650, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "J9W6EARqjWBvPiB2",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// AI'dan gelen yanıtı parse et\nconst aiResponse = $input.first().json;\n\n// Webhook'tan gelen orijinal veriyi al\nconst originalData = $('Validate Table Data').first().json;\n\nlet parsedTableData = null;\nlet errorMessage = null;\n\n// AI yanıtını parse etmeye çalış\ntry {\n  // OpenAI node'dan gelen yanıt formatını kontrol et\n  let content = null;\n  \n  if (aiResponse.message && aiResponse.message.content) {\n    content = aiResponse.message.content;\n  } else if (aiResponse.content) {\n    content = aiResponse.content;\n  } else if (typeof aiResponse === 'string') {\n    content = aiResponse;\n  } else if (aiResponse.columns && aiResponse.rows) {\n    // Zaten parse edilmiş durumda\n    parsedTableData = aiResponse;\n  } else {\n    throw new Error('AI yanıtında içerik bulunamadı');\n  }\n  \n  // Content'i kontrol et\n  if (!parsedTableData && content) {\n    // Eğer content zaten bir object ise (columns ve rows içeriyorsa)\n    if (typeof content === 'object' && content.columns && content.rows) {\n      parsedTableData = content;\n    } \n    // Eğer content string ise\n    else if (typeof content === 'string') {\n      // Markdown code block içindeki JSON'u çıkar\n      const jsonMatch = content.match(/```(?:json)?\\s*([\\s\\S]*?)\\s*```/);\n      if (jsonMatch) {\n        parsedTableData = JSON.parse(jsonMatch[1].trim());\n      } else {\n        // Direkt JSON parse et\n        parsedTableData = JSON.parse(content);\n      }\n    }\n    // Diğer durumlarda string'e çevir\n    else {\n      const contentStr = JSON.stringify(content);\n      parsedTableData = JSON.parse(contentStr);\n    }\n  }\n  \n  // Tablo formatını validate et\n  if (!parsedTableData.columns || !Array.isArray(parsedTableData.columns)) {\n    throw new Error('AI yanıtında columns eksik veya array değil');\n  }\n  \n  if (!parsedTableData.rows || !Array.isArray(parsedTableData.rows)) {\n    throw new Error('AI yanıtında rows eksik veya array değil');\n  }\n  \n  if (parsedTableData.columns.length === 0) {\n    throw new Error('AI yanıtında columns boş');\n  }\n  \n  // Her satırın sütun sayısını kontrol et ve düzelt\n  const expectedColumnCount = parsedTableData.columns.length;\n  parsedTableData.rows = parsedTableData.rows.map((row, index) => {\n    if (!Array.isArray(row)) {\n      throw new Error(`Satır ${index} array değil`);\n    }\n    // Eksik sütunları boş string ile doldur, fazla sütunları kırp\n    while (row.length < expectedColumnCount) {\n      row.push('');\n    }\n    if (row.length > expectedColumnCount) {\n      row = row.slice(0, expectedColumnCount);\n    }\n    return row;\n  });\n  \n} catch (error) {\n  errorMessage = error.message;\n  console.error('AI yanıtı parse edilemedi:', error);\n  console.error('AI yanıtı:', JSON.stringify(aiResponse, null, 2));\n}\n\n// Hata varsa, callback'e hata mesajı gönder\nif (errorMessage) {\n  // HTTP Request node'a gönderilecek hata payload'u\n  return {\n    json: {\n      edit_id: originalData.edit_id,\n      table_id: originalData.table_id,\n      callback_url: originalData.callback_url,\n      status: 'failed',\n      error_message: errorMessage\n    }\n  };\n}\n\n// Başarılı durumda, düzenlenmiş tablo verisini JSON string olarak gönder\nreturn {\n  json: {\n    edit_id: originalData.edit_id,\n    table_id: originalData.table_id,\n    callback_url: originalData.callback_url,\n    status: 'completed',\n    edited_table_data: JSON.stringify(parsedTableData)\n  }\n};"
+      },
+      "id": "parse-ai-response",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "check-status",
+              "leftValue": "={{ $json.status }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "singleValue": "failed"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "check-error-status",
+      "name": "Hata Var mı?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Callback için payload'u formatla\nconst inputData = $input.first().json;\n\n// Başarılı durum için payload\nconst payload = {\n  edit_id: inputData.edit_id,\n  table_id: inputData.table_id,\n  status: 'completed',\n  edited_table_data: inputData.edited_table_data\n};\n\nreturn {\n  json: {\n    ...payload,\n    callback_url: inputData.callback_url\n  }\n};"
+      },
+      "id": "format-success-response",
+      "name": "Format Success Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Hata durumu için payload'u formatla\nconst inputData = $input.first().json;\n\nconst payload = {\n  edit_id: inputData.edit_id,\n  table_id: inputData.table_id,\n  status: 'failed',\n  error_message: inputData.error_message || 'Bilinmeyen hata'\n};\n\nreturn {\n  json: {\n    ...payload,\n    callback_url: inputData.callback_url\n  }\n};"
+      },
+      "id": "format-error-response",
+      "name": "Format Error Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callback_url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"edit_id\": $json.edit_id,\n  \"table_id\": $json.table_id,\n  \"status\": $json.status,\n  \"edited_table_data\": $json.edited_table_data,\n  \"error_message\": $json.error_message || null\n} }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "callback-success",
+      "name": "Callback - Success",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callback_url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"edit_id\": $json.edit_id,\n  \"table_id\": $json.table_id,\n  \"status\": $json.status,\n  \"edited_table_data\": null,\n  \"error_message\": $json.error_message\n} }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "callback-error",
+      "name": "Callback - Error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"success\": true, \"message\": \"Tablo düzenleme işlemi başlatıldı\", \"edit_id\": \"{{ $('Validate Table Data').first().json.edit_id }}\"}",
+        "options": {}
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1650, 300]
+    }
+  ],
+  "connections": {
+    "Webhook - Tablo Düzenleme": {
+      "main": [
+        [
+          {
+            "node": "Validate Table Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Table Data": {
+      "main": [
+        [
+          {
+            "node": "AI Model - Tablo Düzenleme",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Model - Tablo Düzenleme": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Response": {
+      "main": [
+        [
+          {
+            "node": "Hata Var mı?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hata Var mı?": {
+      "main": [
+        [
+          {
+            "node": "Callback - Error",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Callback - Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Callback - Success": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Callback - Error": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-01-19T12:00:00.000Z",
+  "versionId": "1"
+}
+

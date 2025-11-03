@@ -4,18 +4,85 @@ export async function handleWebhook(request, env) {
     const payload = await request.json();
     
     const { 
+      edit_id: editId,
       table_id, 
       document_id,
       chat_message_id,
       status, 
       table_data,
+      edited_table_data: editedTableData,
       total_documents,
       processed_documents,
       error_message 
     } = payload;
 
+    // edit_id varsa table_edits kaydını güncelle (tablo düzenleme işlemi)
+    if (editId) {
+      console.log('🔧 Tablo düzenleme webhook alındı:', { editId, table_id, status, editedTableData });
+      
+      if (!table_id) {
+        return jsonResponse({ error: 'table_id zorunludur (edit_id ile birlikte)' }, 400);
+      }
+
+      if (status === 'completed') {
+        if (!editedTableData || editedTableData === 'null' || editedTableData === '') {
+          return jsonResponse({ error: 'edited_table_data zorunludur (status=completed için)' }, 400);
+        }
+
+        // table_edits kaydını güncelle
+        const editedTableDataStr = typeof editedTableData === 'string' 
+          ? editedTableData 
+          : JSON.stringify(editedTableData);
+
+        console.log('📝 table_edits güncelleniyor:', editId);
+        const updateEditResult = await env.DB.prepare(`
+          UPDATE table_edits 
+          SET status = 'completed',
+              edited_table_data = ?,
+              completed_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).bind(
+          editedTableDataStr,
+          editId
+        ).run();
+        console.log('✅ table_edits güncellendi:', updateEditResult);
+
+        // Orijinal tabloyu da güncelle (kullanıcı düzenlenmiş tabloyu görebilsin)
+        console.log('📝 generated_tables güncelleniyor:', table_id);
+        const updateTableResult = await env.DB.prepare(`
+          UPDATE generated_tables 
+          SET table_data = ?,
+              completed_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).bind(
+          editedTableDataStr,
+          table_id
+        ).run();
+        console.log('✅ generated_tables güncellendi:', updateTableResult);
+
+        return jsonResponse({ success: true, edit_id: editId });
+      } else if (status === 'failed') {
+        // table_edits kaydını hata durumuyla güncelle
+        await env.DB.prepare(`
+          UPDATE table_edits 
+          SET status = 'failed',
+              error_message = ?,
+              completed_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).bind(
+          error_message || 'Bilinmeyen hata',
+          editId
+        ).run();
+
+        return jsonResponse({ success: true, edit_id: editId });
+      } else {
+        return jsonResponse({ error: `Desteklenmeyen durum: ${status}` }, 400);
+      }
+    }
+
+    // Eski format: generated_tables için (belge analiz workflow'u)
     if (!table_id) {
-      return jsonResponse({ error: 'table_id gerekli' }, 400);
+      return jsonResponse({ error: 'table_id veya edit_id zorunludur' }, 400);
     }
 
     // Generated table kaydını güncelle

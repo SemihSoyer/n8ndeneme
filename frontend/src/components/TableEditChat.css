@@ -1,0 +1,34 @@
+.example-prompts {
+  margin-top: 1.5rem;
+  text-align: left;
+  background: white;
+  padding: 1rem;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.examples-title {
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: #0f172a;
+}
+
+.example-prompts ul {
+  margin: 0;
+  padding-left: 1.5rem;
+  list-style-type: disc;
+}
+
+.example-prompts li {
+  margin: 0.5rem 0;
+  color: #475569;
+  font-size: 0.9rem;
+}
+
+.prompt-counter {
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: #64748b;
+  text-align: right;
+}
+
