@@ -4,6 +4,7 @@ import { handleWebhook } from './handlers/webhook.js';
 import { handleStatus } from './handlers/status.js';
 import { handleDownload } from './handlers/download.js';
 import { handleTableEdit, handleTableEditStatus } from './handlers/tableEdit.js';
+import { getTableChatHistory, saveTableChatMessage, clearTableChatHistory } from './handlers/tableChatHistory.js';
 
 // CORS headers
 const corsHeaders = {
@@ -75,6 +76,21 @@ export default {
       if (path.match(/^\/api\/table\/edit\/status\/[^\/]+$/) && request.method === 'GET') {
         const editId = path.split('/').pop();
         return handleTableEditStatus(editId, env);
+      }
+
+      // Chat history endpoints
+      if (path.match(/^\/api\/table\/[^\/]+\/chat-history$/) && request.method === 'GET') {
+        const tableId = path.split('/')[3]; // /api/table/{tableId}/chat-history
+        return getTableChatHistory(tableId, env);
+      }
+
+      if (path === '/api/table/chat-message' && request.method === 'POST') {
+        return saveTableChatMessage(request, env);
+      }
+
+      if (path.match(/^\/api\/table\/[^\/]+\/chat-history$/) && request.method === 'DELETE') {
+        const tableId = path.split('/')[3]; // /api/table/{tableId}/chat-history
+        return clearTableChatHistory(tableId, env);
       }
 
       // 404

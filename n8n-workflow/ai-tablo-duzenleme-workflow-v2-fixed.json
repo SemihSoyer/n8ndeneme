@@ -1,0 +1,392 @@
+{
+  "name": "AI Tablo Düzenleme (with Backend Memory + Web Search)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "table-edit-ai",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-table-edit",
+      "name": "Webhook - Tablo Düzenleme",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "generate-new-id"
+    },
+    {
+      "parameters": {
+        "jsCode": "const webhookData = $input.first().json.body || $input.first().json;\nconst tableData = webhookData.table_data;\nconst prompt = webhookData.prompt;\nconst editId = webhookData.edit_id;\nconst tableId = webhookData.table_id;\nconst callbackUrl = webhookData.callback_url;\nconst webSearch = Boolean(webhookData.web_search);\nconst sessionId = webhookData.session_id || tableId;\nconst resetMemory = Boolean(webhookData.reset_memory);\n\nif (!tableData) throw new Error('table_data eksik');\nif (!prompt) throw new Error('prompt eksik');\nif (!editId) throw new Error('edit_id eksik');\nif (!tableId) throw new Error('table_id eksik');\nif (!callbackUrl) throw new Error('callback_url eksik');\n\nlet parsedTableData;\ntry {\n  parsedTableData = typeof tableData === 'string' ? JSON.parse(tableData) : tableData;\n} catch (e) {\n  throw new Error('table_data geçersiz JSON: ' + e.message);\n}\nif (!parsedTableData.columns || !Array.isArray(parsedTableData.columns)) throw new Error('table_data.columns eksik/array değil');\nif (!parsedTableData.rows || !Array.isArray(parsedTableData.rows)) throw new Error('table_data.rows eksik/array değil');\nif (parsedTableData.columns.length === 0) throw new Error('table_data.columns boş');\n\nreturn {\n  json: {\n    table_data: parsedTableData,\n    prompt,\n    edit_id: editId,\n    table_id: tableId,\n    callback_url: callbackUrl,\n    web_search: webSearch,\n    session_id: sessionId,\n    reset_memory: resetMemory\n  }\n};"
+      },
+      "id": "validate-table-data",
+      "name": "Validate Table Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.BACKEND_URL || 'https://document-analysis-api.sunmateapplication.workers.dev' }}/api/table/{{ $json.session_id }}/chat-history",
+        "options": {}
+      },
+      "id": "memory-load-http",
+      "name": "Memory - Load (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $('Validate Table Data').first().json;\nconst historyData = $input.first().json;\nconst msgs = (historyData.messages || []).slice(-16); // Son 16 mesaj\nconst historyText = msgs.map(m => (m.role === 'user' ? 'Kullanıcı: ' : 'Asistan: ') + String(m.message || '').slice(0,200)).join('\\n');\nreturn { json: { ...base, history_text: historyText } };"
+      },
+      "id": "format-history",
+      "name": "Format History",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.first().json;\nconst p = String(d.prompt || '').toLowerCase();\nconst need = Boolean(d.web_search) || /(araştır|güncel|web|internet|fiyat|son durum|kaynak|haber)/i.test(p);\nreturn { json: { ...d, need_research: need } };"
+      },
+      "id": "decide-research",
+      "name": "Decide Research",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "need-research",
+              "leftValue": "={{ $json.need_research }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "isTrue"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "research-check",
+      "name": "Araştırma?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.perplexity.ai/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.PERPLEXITY_API_KEY}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"model\": \"sonar-pro\",\n  \"temperature\": 0.2,\n  \"max_tokens\": 500,\n  \"messages\": [\n    {\"role\":\"system\",\"content\":\"Sen Türkiye odaklı güvenilir bir web araştırma yardımcısısın; kaynakları sentezle, çelişkileri belirt, kısa ve Türkçe yaz.\"},\n    {\"role\":\"user\",\"content\":\n      \"Kısa araştırma yap:\\n\\nİstek: \" + $json.prompt +\n      \"\\nSütunlar: \" + ($json.table_data.columns || []).join(\", \") +\n      \"\\nBağlam: Türkiye, TRY, son 12 ay.\\nÇıktı: Kaynaklı ve öz bir özet (en fazla 15-20 satır).\" }\n  ]\n} }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "perplexity-search",
+      "name": "Perplexity - Ara",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.first().json;\nlet research = '';\ntry {\n  const content = d.choices?.[0]?.message?.content || d.data?.choices?.[0]?.message?.content;\n  research = (content || '').toString().slice(0, 4000);\n} catch(e) { research = ''; }\nreturn { json: { research_text: research } };"
+      },
+      "id": "extract-research",
+      "name": "Extract Research",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1650, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $('Decide Research').first().json;\n\n// Web search yapıldıysa research_text al, yapılmadıysa boş string\nlet research_text = '';\ntry {\n  const researchNode = $('Extract Research').first();\n  if (researchNode && researchNode.json) {\n    research_text = researchNode.json.research_text || '';\n  }\n} catch (e) {\n  // Extract Research node çalışmadıysa (web search kapalı), boş string kullan\n  research_text = '';\n}\n\nconst RULES = `\\n**KURALLAR**\\n1) Mevcut sütun yapısını KORU (columns değişmez).\\n2) Sadece istenen değişiklikleri uygula.\\n3) Formatı bozma.\\n4) Yeni satırlar eklenirse tüm sütunları doldur.\\n5) Çıktı SADECE JSON (markdown KULLANMA).`;\n\nconst history = base.history_text ? `\\n\\n**GEÇMİŞ SOHBET (kısa):**\\n${base.history_text}` : '';\nconst research = research_text ? `\\n\\n**ARAŞTIRMA ÖZETİ:**\\n${research_text}` : '';\n\nconst finalPrompt = [\n  'Sen bir tablo düzenleme uzmanısın. Verilen tabloyu kullanıcının isteğine göre düzenle.',\n  RULES,\n  `\\n\\n**MEVCUT TABLO:**\\n${JSON.stringify(base.table_data, null, 2)}`,\n  `\\n\\n**KULLANICI İSTEĞİ:**\\n${base.prompt}`,\n  history,\n  research,\n  `\\n\\n**SADECE JSON DÖN:** {\"columns\": [...], \"rows\": [[...]]}`\n].join('\\n');\n\nreturn { json: { ...base, research_text, ai_prompt: finalPrompt } };"
+      },
+      "id": "prepare-prompt",
+      "name": "Prepare Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1850, 300]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "={{ $json.ai_prompt }}"
+            }
+          ]
+        },
+        "jsonOutput": true,
+        "options": {}
+      },
+      "id": "ai-model-edit",
+      "name": "AI Model - Tablo Düzenleme",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [2050, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "J9W6EARqjWBvPiB2",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const aiResponse = $input.first().json;\nconst originalData = $('Validate Table Data').first().json;\nlet parsedTableData = null;\nlet errorMessage = null;\ntry {\n  let content = null;\n  if (aiResponse.message && aiResponse.message.content) content = aiResponse.message.content;\n  else if (aiResponse.content) content = aiResponse.content;\n  else if (typeof aiResponse === 'string') content = aiResponse;\n  else if (aiResponse.columns && aiResponse.rows) parsedTableData = aiResponse;\n  else throw new Error('AI yanıtında içerik bulunamadı');\n\n  if (!parsedTableData && content) {\n    if (typeof content === 'object' && content.columns && content.rows) parsedTableData = content;\n    else if (typeof content === 'string') {\n      const jsonMatch = content.match(/```(?:json)?\\s*([\\s\\S]*?)\\s*```/);\n      parsedTableData = JSON.parse(jsonMatch ? jsonMatch[1].trim() : content);\n    } else {\n      parsedTableData = JSON.parse(JSON.stringify(content));\n    }\n  }\n  if (!parsedTableData.columns || !Array.isArray(parsedTableData.columns)) throw new Error('AI yanıtında columns yok');\n  if (!parsedTableData.rows || !Array.isArray(parsedTableData.rows)) throw new Error('AI yanıtında rows yok');\n  if (parsedTableData.columns.length === 0) throw new Error('AI yanıtında columns boş');\n\n  const expected = parsedTableData.columns.length;\n  parsedTableData.rows = parsedTableData.rows.map((row, i) => {\n    if (!Array.isArray(row)) throw new Error(`Satır ${i} array değil`);\n    while (row.length < expected) row.push('');\n    if (row.length > expected) row = row.slice(0, expected);\n    return row;\n  });\n} catch (error) {\n  errorMessage = error.message;\n}\nif (errorMessage) {\n  return {\n    json: {\n      edit_id: originalData.edit_id,\n      table_id: originalData.table_id,\n      callback_url: originalData.callback_url,\n      status: 'failed',\n      error_message: errorMessage,\n      session_id: originalData.session_id\n    }\n  };\n}\nreturn {\n  json: {\n    edit_id: originalData.edit_id,\n    table_id: originalData.table_id,\n    callback_url: originalData.callback_url,\n    status: 'completed',\n    edited_table_data: JSON.stringify(parsedTableData),\n    session_id: originalData.session_id\n  }\n};"
+      },
+      "id": "parse-ai-response",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.BACKEND_URL || 'https://document-analysis-api.sunmateapplication.workers.dev' }}/api/table/chat-message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"table_id\": $json.session_id, \"role\": \"user\", \"message\": $('Validate Table Data').first().json.prompt } }}",
+        "options": {
+          "response": {
+            "response": {
+              "outputPropertyName": "user_message_response"
+            }
+          }
+        }
+      },
+      "id": "save-user-message",
+      "name": "Save User Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2450, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.BACKEND_URL || 'https://document-analysis-api.sunmateapplication.workers.dev' }}/api/table/chat-message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"table_id\": $json.session_id, \"role\": \"assistant\", \"message\": $json.status === 'completed' ? 'Tablo düzenlendi' : 'Hata: ' + ($json.error_message || 'Bilinmeyen hata') } }}",
+        "options": {
+          "response": {
+            "response": {
+              "outputPropertyName": "assistant_message_response"
+            }
+          }
+        }
+      },
+      "id": "save-assistant-message",
+      "name": "Save Assistant Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2450, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "check-status",
+              "leftValue": "={{ $json.status }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "singleValue": "failed"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "check-error",
+      "name": "Hata Var mı?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2650, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callback_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"edit_id\": $json.edit_id, \"table_id\": $json.table_id, \"status\": $json.status, \"edited_table_data\": $json.edited_table_data, \"error_message\": $json.error_message || null } }}",
+        "options": {}
+      },
+      "id": "callback-success",
+      "name": "Callback - Success",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2850, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callback_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"edit_id\": $json.edit_id, \"table_id\": $json.table_id, \"status\": $json.status, \"edited_table_data\": null, \"error_message\": $json.error_message } }}",
+        "options": {}
+      },
+      "id": "callback-error",
+      "name": "Callback - Error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2850, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"success\": true, \"message\": \"Tablo düzenleme işlemi başlatıldı\", \"edit_id\": \"{{ $('Validate Table Data').first().json.edit_id }}\"}",
+        "options": {}
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [3050, 300]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - Tablo Düzenleme": {
+      "main": [[{"node": "Validate Table Data", "type": "main", "index": 0}]]
+    },
+    "Validate Table Data": {
+      "main": [[{"node": "Memory - Load (HTTP)", "type": "main", "index": 0}]]
+    },
+    "Memory - Load (HTTP)": {
+      "main": [[{"node": "Format History", "type": "main", "index": 0}]]
+    },
+    "Format History": {
+      "main": [[{"node": "Decide Research", "type": "main", "index": 0}]]
+    },
+    "Decide Research": {
+      "main": [[{"node": "Araştırma?", "type": "main", "index": 0}]]
+    },
+    "Araştırma?": {
+      "main": [
+        [{"node": "Perplexity - Ara", "type": "main", "index": 0}],
+        [{"node": "Prepare Prompt", "type": "main", "index": 0}]
+      ]
+    },
+    "Perplexity - Ara": {
+      "main": [[{"node": "Extract Research", "type": "main", "index": 0}]]
+    },
+    "Extract Research": {
+      "main": [[{"node": "Prepare Prompt", "type": "main", "index": 0}]]
+    },
+    "Prepare Prompt": {
+      "main": [[{"node": "AI Model - Tablo Düzenleme", "type": "main", "index": 0}]]
+    },
+    "AI Model - Tablo Düzenleme": {
+      "main": [[{"node": "Parse AI Response", "type": "main", "index": 0}]]
+    },
+    "Parse AI Response": {
+      "main": [[{"node": "Save User Message", "type": "main", "index": 0}, {"node": "Save Assistant Message", "type": "main", "index": 0}]]
+    },
+    "Save User Message": {
+      "main": [[{"node": "Hata Var mı?", "type": "main", "index": 0}]]
+    },
+    "Save Assistant Message": {
+      "main": [[{"node": "Hata Var mı?", "type": "main", "index": 0}]]
+    },
+    "Hata Var mı?": {
+      "main": [
+        [{"node": "Callback - Error", "type": "main", "index": 0}],
+        [{"node": "Callback - Success", "type": "main", "index": 0}]
+      ]
+    },
+    "Callback - Success": {
+      "main": [[{"node": "Webhook Response", "type": "main", "index": 0}]]
+    },
+    "Callback - Error": {
+      "main": [[{"node": "Webhook Response", "type": "main", "index": 0}]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "new-version",
+  "tags": []
+}
+

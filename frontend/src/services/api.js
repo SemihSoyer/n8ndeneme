@@ -82,11 +82,14 @@ export async function getDocument(documentId) {
 }
 
 // Tablo düzenleme - AI ile
-export async function editTableWithAI(tableId, tableData, prompt) {
+export async function editTableWithAI(tableId, tableData, prompt, options = {}) {
   const payload = {
     table_id: tableId,
     table_data: tableData,
     prompt: prompt.trim(),
+    web_search: options.web_search || false,
+    session_id: options.session_id || tableId,
+    reset_memory: options.reset_memory || false,
   };
 
   const response = await fetch(`${API_URL}/api/table/edit`, {

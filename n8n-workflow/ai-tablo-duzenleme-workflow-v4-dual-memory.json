@@ -1,0 +1,659 @@
+{
+  "name": "AI Tablo Düzenleme Workflow son hali 2",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "table-edit-ai",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "342cc48c-fdee-4aa7-aaf4-c8b90561790d",
+      "name": "Webhook - Tablo Düzenleme",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        416
+      ],
+      "webhookId": "generate-new-id"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Tablo verisini validate et\nconst webhookData = $input.first().json.body || $input.first().json;\n\n// Gerekli alanları kontrol et\nconst tableData = webhookData.table_data;\nconst prompt = webhookData.prompt;\nconst editId = webhookData.edit_id;\nconst tableId = webhookData.table_id;\nconst callbackUrl = webhookData.callback_url;\nconst webSearch = webhookData.web_search || false;\nconst sessionId = webhookData.session_id || tableId;\nconst resetMemory = webhookData.reset_memory || false;\n\n// Zorunlu alan kontrolü\nif (!tableData) {\n  throw new Error('table_data eksik');\n}\n\nif (!prompt) {\n  throw new Error('prompt eksik');\n}\n\nif (!editId) {\n  throw new Error('edit_id eksik');\n}\n\nif (!tableId) {\n  throw new Error('table_id eksik');\n}\n\nif (!callbackUrl) {\n  throw new Error('callback_url eksik');\n}\n\n// Tablo verisini parse et (eğer string ise)\nlet parsedTableData;\ntry {\n  parsedTableData = typeof tableData === 'string' ? JSON.parse(tableData) : tableData;\n} catch (e) {\n  throw new Error('table_data geçersiz JSON formatında: ' + e.message);\n}\n\n// Tablo yapısını kontrol et\nif (!parsedTableData.columns || !Array.isArray(parsedTableData.columns)) {\n  throw new Error('table_data.columns eksik veya array değil');\n}\n\nif (!parsedTableData.rows || !Array.isArray(parsedTableData.rows)) {\n  throw new Error('table_data.rows eksik veya array değil');\n}\n\nif (parsedTableData.columns.length === 0) {\n  throw new Error('table_data.columns boş');\n}\n\n// Her satırın sütun sayısını kontrol et\nfor (let i = 0; i < parsedTableData.rows.length; i++) {\n  const row = parsedTableData.rows[i];\n  if (!Array.isArray(row)) {\n    throw new Error(`table_data.rows[${i}] array değil`);\n  }\n  if (row.length !== parsedTableData.columns.length) {\n    console.warn(`Satır ${i} sütun sayısı uyuşmuyor (${row.length} vs ${parsedTableData.columns.length})`);\n  }\n}\n\n// Geçerli veriyi bir sonraki node'a ilet\nreturn {\n  json: {\n    table_data: parsedTableData,\n    prompt: prompt,\n    edit_id: editId,\n    table_id: tableId,\n    callback_url: callbackUrl,\n    web_search: webSearch,\n    session_id: sessionId,\n    reset_memory: resetMemory\n  }\n};"
+      },
+      "id": "6be1b0af-5ff1-4f4c-9d32-560e26efd7ce",
+      "name": "Validate Table Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        16,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// AI'dan gelen yanıtı parse et\nconst aiResponse = $input.first().json;\n\n// Webhook'tan gelen orijinal veriyi al\nconst originalData = $('Validate Table Data').first().json;\n\nlet parsedTableData = null;\nlet errorMessage = null;\n\n// AI yanıtını parse etmeye çalış\ntry {\n  // OpenAI node'dan gelen yanıt formatını kontrol et\n  let content = null;\n  \n  if (aiResponse.message && aiResponse.message.content) {\n    content = aiResponse.message.content;\n  } else if (aiResponse.content) {\n    content = aiResponse.content;\n  } else if (typeof aiResponse === 'string') {\n    content = aiResponse;\n  } else if (aiResponse.columns && aiResponse.rows) {\n    // Zaten parse edilmiş durumda\n    parsedTableData = aiResponse;\n  } else {\n    throw new Error('AI yanıtında içerik bulunamadı');\n  }\n  \n  // Content'i kontrol et\n  if (!parsedTableData && content) {\n    // Eğer content zaten bir object ise (columns ve rows içeriyorsa)\n    if (typeof content === 'object' && content.columns && content.rows) {\n      parsedTableData = content;\n    } \n    // Eğer content string ise\n    else if (typeof content === 'string') {\n      // Markdown code block içindeki JSON'u çıkar\n      const jsonMatch = content.match(/```(?:json)?\\s*([\\s\\S]*?)\\s*```/);\n      if (jsonMatch) {\n        parsedTableData = JSON.parse(jsonMatch[1].trim());\n      } else {\n        // Direkt JSON parse et\n        parsedTableData = JSON.parse(content);\n      }\n    }\n    // Diğer durumlarda string'e çevir\n    else {\n      const contentStr = JSON.stringify(content);\n      parsedTableData = JSON.parse(contentStr);\n    }\n  }\n  \n  // Tablo formatını validate et\n  if (!parsedTableData.columns || !Array.isArray(parsedTableData.columns)) {\n    throw new Error('AI yanıtında columns eksik veya array değil');\n  }\n  \n  if (!parsedTableData.rows || !Array.isArray(parsedTableData.rows)) {\n    throw new Error('AI yanıtında rows eksik veya array değil');\n  }\n  \n  if (parsedTableData.columns.length === 0) {\n    throw new Error('AI yanıtında columns boş');\n  }\n  \n  // Her satırın sütun sayısını kontrol et ve düzelt\n  const expectedColumnCount = parsedTableData.columns.length;\n  parsedTableData.rows = parsedTableData.rows.map((row, index) => {\n    if (!Array.isArray(row)) {\n      throw new Error(`Satır ${index} array değil`);\n    }\n    // Eksik sütunları boş string ile doldur, fazla sütunları kırp\n    while (row.length < expectedColumnCount) {\n      row.push('');\n    }\n    if (row.length > expectedColumnCount) {\n      row = row.slice(0, expectedColumnCount);\n    }\n    return row;\n  });\n  \n} catch (error) {\n  errorMessage = error.message;\n  console.error('AI yanıtı parse edilemedi:', error);\n  console.error('AI yanıtı:', JSON.stringify(aiResponse, null, 2));\n}\n\n// Hata varsa, callback'e hata mesajı gönder\nif (errorMessage) {\n  // HTTP Request node'a gönderilecek hata payload'u\n  return {\n    json: {\n      edit_id: originalData.edit_id,\n      table_id: originalData.table_id,\n      callback_url: originalData.callback_url,\n      status: 'failed',\n      error_message: errorMessage\n    }\n  };\n}\n\n// Başarılı durumda, düzenlenmiş tablo verisini JSON string olarak gönder\nreturn {\n  json: {\n    edit_id: originalData.edit_id,\n    table_id: originalData.table_id,\n    callback_url: originalData.callback_url,\n    status: 'completed',\n    edited_table_data: JSON.stringify(parsedTableData)\n  }\n};"
+      },
+      "id": "9659686f-fe61-406f-8f2b-3d560414e549",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "web-search-check",
+              "leftValue": "={{ $json.web_search }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "bba5e970-4d14-4730-8b41-75857523d3be",
+      "name": "Web Search Aktif mi?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        240,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\nconst tableDataStr = JSON.stringify(data.table_data, null, 2);\nconst chatInput = `Tablo düzenleme görevi: ${data.prompt}\\n\\nMevcut Tablo:\\n${tableDataStr}\\n\\nGerekliyse web'den araştırma yaparak tabloyu düzenle ve sadece JSON formatında döndür: {\"columns\": [...], \"rows\": [[...]]}\\n\\nÖNEMLİ: Yanıtında sadece JSON olmalı, başka hiçbir metin olmamalı.`;\n\nreturn {\n  json: {\n    table_data: data.table_data,\n    prompt: data.prompt,\n    edit_id: data.edit_id,\n    table_id: data.table_id,\n    callback_url: data.callback_url,\n    session_id: data.session_id || data.table_id,\n    web_search: data.web_search,\n    reset_memory: data.reset_memory,\n    chatInput: chatInput\n  }\n};"
+      },
+      "id": "a7976df1-d31c-4b8c-a383-33204be55692",
+      "name": "Prepare AI Agent Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst originalData = $('Prepare AI Agent Prompt').first().json;\n\nlet parsedTableData = null;\nlet errorMessage = null;\n\ntry {\n  // AI Agent'tan gelen output'u al\n  let agentOutput = input.output || input.text || input.content || input;\n  \n  // Eğer agentOutput bir string değilse, stringify yap\n  if (typeof agentOutput !== 'string') {\n    agentOutput = JSON.stringify(agentOutput);\n  }\n  \n  console.log('AI Agent output:', agentOutput);\n  \n  // Markdown code block varsa temizle\n  let content = agentOutput;\n  const jsonMatch = content.match(/```(?:json)?\\\\s*([\\\\s\\\\S]*?)\\\\s*```/);\n  if (jsonMatch) {\n    content = jsonMatch[1].trim();\n  }\n  \n  // JSON parse et\n  parsedTableData = JSON.parse(content);\n  \n  // Validate\n  if (!parsedTableData.columns || !Array.isArray(parsedTableData.columns)) {\n    throw new Error('AI Agent yanıtında columns eksik veya array değil');\n  }\n  \n  if (!parsedTableData.rows || !Array.isArray(parsedTableData.rows)) {\n    throw new Error('AI Agent yanıtında rows eksik veya array değil');\n  }\n  \n  // Her satırın sütun sayısını kontrol et\n  const expectedColumnCount = parsedTableData.columns.length;\n  parsedTableData.rows = parsedTableData.rows.map((row, index) => {\n    if (!Array.isArray(row)) {\n      throw new Error(`Satır ${index} array değil`);\n    }\n    while (row.length < expectedColumnCount) {\n      row.push('');\n    }\n    if (row.length > expectedColumnCount) {\n      row = row.slice(0, expectedColumnCount);\n    }\n    return row;\n  });\n  \n  console.log('✅ AI Agent yanıtı başarıyla parse edildi');\n  \n  return {\n    json: {\n      edit_id: originalData.edit_id,\n      table_id: originalData.table_id,\n      callback_url: originalData.callback_url,\n      session_id: originalData.session_id,\n      status: 'completed',\n      edited_table_data: JSON.stringify(parsedTableData)\n    }\n  };\n  \n} catch (error) {\n  console.error('❌ AI Agent parse error:', error.message);\n  console.error('Input:', JSON.stringify(input, null, 2));\n  \n  return {\n    json: {\n      edit_id: originalData.edit_id,\n      table_id: originalData.table_id,\n      callback_url: originalData.callback_url,\n      session_id: originalData.session_id,\n      status: 'failed',\n      error_message: `AI Agent parse error: ${error.message}`\n    }\n  };\n}"
+      },
+      "id": "4466afb4-7bec-4680-a844-82456b9dbadd",
+      "name": "Parse AI Agent Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "check-status",
+              "leftValue": "={{ $json.status }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "singleValue": "failed"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "1648fa0b-4eb7-4da1-8f34-53d28f58f159",
+      "name": "Hata Var mı?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1584,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callback_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"edit_id\": $json.edit_id,\n  \"table_id\": $json.table_id,\n  \"status\": $json.status,\n  \"edited_table_data\": $json.edited_table_data,\n  \"error_message\": $json.error_message || null\n} }}",
+        "options": {}
+      },
+      "id": "d800a3eb-e069-452a-b21a-4950f51569f5",
+      "name": "Callback - Success",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1808,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callback_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"edit_id\": $json.edit_id,\n  \"table_id\": $json.table_id,\n  \"status\": $json.status,\n  \"edited_table_data\": null,\n  \"error_message\": $json.error_message\n} }}",
+        "options": {}
+      },
+      "id": "41ef3880-e811-4dd9-9d06-63384aebd99a",
+      "name": "Callback - Error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1808,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"success\": true, \"message\": \"Tablo düzenleme işlemi başlatıldı\", \"edit_id\": \"{{ $('Validate Table Data').first().json.edit_id }}\"}",
+        "options": {}
+      },
+      "id": "63239e63-851a-4c69-87f8-3b7ad9b4a4ff",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        2032,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "Sen Tablola uygulamasının AI asistanısın. Kullanıcının tablo düzenleme talebini anla ve gerekirse web'den araştırma yaparak tabloyu düzenle.\n\nÇıktı formatı: Sadece JSON formatında tablo verisi döndür. Başka hiçbir açıklama ekleme.\n\nFormat: {\"columns\": [...], \"rows\": [[...]]}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        960,
+        160
+      ],
+      "id": "8b561187-f17f-44c4-b281-425229a21a70",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4.1-mini"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        896,
+        384
+      ],
+      "id": "14bc1a24-278b-480c-a190-9fe58b389188",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "J9W6EARqjWBvPiB2",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "messages": {
+          "message": [
+            {
+              "content": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('message0_Text', ``, 'string') }}"
+            }
+          ]
+        },
+        "simplify": true,
+        "options": {},
+        "requestOptions": {}
+      },
+      "type": "n8n-nodes-base.perplexityTool",
+      "typeVersion": 1,
+      "position": [
+        1168,
+        384
+      ],
+      "id": "c19ef660-d1e1-4130-9c6c-2a6bf5147acf",
+      "name": "Message a model in Perplexity",
+      "credentials": {
+        "perplexityApi": {
+          "id": "khCvlADs8knDnzNX",
+          "name": "Perplexity account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $json.session_id }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        1024,
+        384
+      ],
+      "id": "2badaa68-27a2-45f2-8999-85c12876d1bc",
+      "name": "Simple Memory"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\nconst tableDataStr = JSON.stringify(data.table_data, null, 2);\nconst chatInput = `Tablo düzenleme görevi: ${data.prompt}\\n\\nMevcut Tablo:\\n${tableDataStr}\\n\\nTabloyu düzenle ve sadece JSON formatında döndür: {\"columns\": [...], \"rows\": [[...]]}\\n\\nÖNEMLİ: Yanıtında sadece JSON olmalı, başka hiçbir metin olmamalı.`;\n\nreturn {\n  json: {\n    table_data: data.table_data,\n    prompt: data.prompt,\n    edit_id: data.edit_id,\n    table_id: data.table_id,\n    callback_url: data.callback_url,\n    session_id: data.session_id || data.table_id,\n    web_search: data.web_search,\n    reset_memory: data.reset_memory,\n    chatInput: chatInput\n  }\n};"
+      },
+      "id": "prepare-no-search-prompt",
+      "name": "Prepare Prompt (No Search)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        464,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "text": "={{ $json.chatInput }}",
+        "options": {
+          "systemMessage": "Sen Tablola uygulamasının AI asistanısın. Kullanıcının tablo düzenleme talebini anla ve tabloyu düzenle.\n\nÇıktı formatı: Sadece JSON formatında tablo verisi döndür. Başka hiçbir açıklama ekleme.\n\nFormat: {\"columns\": [...], \"rows\": [[...]]}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        656,
+        528
+      ],
+      "id": "6976a163-2329-48e4-aa37-2f6762a409bb",
+      "name": "AI Agent1"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4.1-mini"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        512,
+        768
+      ],
+      "id": "f7e93360-4627-4436-b153-276dafab1265",
+      "name": "OpenAI Chat Model1",
+      "credentials": {
+        "openAiApi": {
+          "id": "J9W6EARqjWBvPiB2",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $json.session_id }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        720,
+        752
+      ],
+      "id": "802dd03c-ca3f-4493-82dd-bcdbd411dc78",
+      "name": "Simple Memory1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst originalData = $('Prepare Prompt (No Search)').first().json;\n\nlet parsedTableData = null;\nlet errorMessage = null;\n\ntry {\n  // AI Agent'tan gelen output'u al\n  let agentOutput = input.output || input.text || input.content || input;\n  \n  // Eğer agentOutput bir string değilse, stringify yap\n  if (typeof agentOutput !== 'string') {\n    agentOutput = JSON.stringify(agentOutput);\n  }\n  \n  console.log('AI Agent1 output:', agentOutput);\n  \n  // Markdown code block varsa temizle\n  let content = agentOutput;\n  const jsonMatch = content.match(/```(?:json)?\\\\s*([\\\\s\\\\S]*?)\\\\s*```/);\n  if (jsonMatch) {\n    content = jsonMatch[1].trim();\n  }\n  \n  // JSON parse et\n  parsedTableData = JSON.parse(content);\n  \n  // Validate\n  if (!parsedTableData.columns || !Array.isArray(parsedTableData.columns)) {\n    throw new Error('AI Agent yanıtında columns eksik veya array değil');\n  }\n  \n  if (!parsedTableData.rows || !Array.isArray(parsedTableData.rows)) {\n    throw new Error('AI Agent yanıtında rows eksik veya array değil');\n  }\n  \n  // Her satırın sütun sayısını kontrol et\n  const expectedColumnCount = parsedTableData.columns.length;\n  parsedTableData.rows = parsedTableData.rows.map((row, index) => {\n    if (!Array.isArray(row)) {\n      throw new Error(`Satır ${index} array değil`);\n    }\n    while (row.length < expectedColumnCount) {\n      row.push('');\n    }\n    if (row.length > expectedColumnCount) {\n      row = row.slice(0, expectedColumnCount);\n    }\n    return row;\n  });\n  \n  console.log('✅ AI Agent1 yanıtı başarıyla parse edildi');\n  \n  return {\n    json: {\n      edit_id: originalData.edit_id,\n      table_id: originalData.table_id,\n      callback_url: originalData.callback_url,\n      session_id: originalData.session_id,\n      status: 'completed',\n      edited_table_data: JSON.stringify(parsedTableData)\n    }\n  };\n  \n} catch (error) {\n  console.error('❌ AI Agent1 parse error:', error.message);\n  console.error('Input:', JSON.stringify(input, null, 2));\n  \n  return {\n    json: {\n      edit_id: originalData.edit_id,\n      table_id: originalData.table_id,\n      callback_url: originalData.callback_url,\n      session_id: originalData.session_id,\n      status: 'failed',\n      error_message: `AI Agent parse error: ${error.message}`\n    }\n  };\n}"
+      },
+      "id": "parse-ai-agent-response-no-search",
+      "name": "Parse AI Agent Response1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        864,
+        528
+      ]
+    }
+  ],
+  "pinData": {
+    "Webhook - Tablo Düzenleme": [
+      {
+        "json": {
+          "headers": {
+            "host": "4pkiavrn.rpcld.co",
+            "content-length": "539",
+            "accept-encoding": "gzip",
+            "cdn-loop": "cloudflare; loops=1; subreqs=1",
+            "cf-connecting-ip": "2a06:98c0:3600::103",
+            "cf-ew-via": "15",
+            "cf-ipcountry": "NL",
+            "cf-ray": "9994dc8420b0a6a3-AMS",
+            "cf-visitor": "{\"scheme\":\"https\"}",
+            "cf-worker": "sunmateapplication.workers.dev",
+            "content-type": "application/json",
+            "x-forwarded-for": "2a06:98c0:3600::103, 104.23.170.33",
+            "x-forwarded-host": "4pkiavrn.rpcld.co",
+            "x-forwarded-port": "443",
+            "x-forwarded-proto": "https",
+            "x-forwarded-server": "140d36d834de",
+            "x-real-ip": "104.23.170.33"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "table_data": {
+              "columns": [
+                "Ürün",
+                "Miktar",
+                "Fiyat"
+              ],
+              "rows": [
+                [
+                  "Begonit",
+                  "230 m²",
+                  "225.400 Ł"
+                ],
+                [
+                  "Mineralli Bordur",
+                  "80 metretül",
+                  "53.600 Ł"
+                ],
+                [
+                  "Toplam",
+                  "",
+                  "279.000 €"
+                ]
+              ]
+            },
+            "prompt": "3 tane daha rastgele satır ekle",
+            "edit_id": "800e5cf7-3e70-4494-9e5f-95ca02c18163",
+            "table_id": "f8996f65-e94c-41e8-bf51-93c80449bf86",
+            "callback_url": "https://document-analysis-api.sunmateapplication.workers.dev/api/webhook/n8n",
+            "web_search": false,
+            "session_id": "f8996f65-e94c-41e8-bf51-93c80449bf86",
+            "reset_memory": false,
+            "api_secret": "n8n-test-secret-2025"
+          },
+          "webhookUrl": "https://4pkiavrn.rpcld.co/webhook/table-edit-ai",
+          "executionMode": "production"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Webhook - Tablo Düzenleme": {
+      "main": [
+        [
+          {
+            "node": "Validate Table Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Table Data": {
+      "main": [
+        [
+          {
+            "node": "Web Search Aktif mi?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Web Search Aktif mi?": {
+      "main": [
+        [
+          {
+            "node": "Prepare AI Agent Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Prompt (No Search)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Prompt (No Search)": {
+      "main": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare AI Agent Prompt": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Agent Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Agent Response": {
+      "main": [
+        [
+          {
+            "node": "Hata Var mı?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Response": {
+      "main": [
+        [
+          {
+            "node": "Hata Var mı?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hata Var mı?": {
+      "main": [
+        [
+          {
+            "node": "Callback - Error",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Callback - Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Callback - Success": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Callback - Error": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model in Perplexity": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent1": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Agent Response1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory1": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Agent Response1": {
+      "main": [
+        [
+          {
+            "node": "Hata Var mı?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "4f4f53b4-64fd-4e73-8ef1-4794740aa72c",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "71ba274ed698c49001683b7a1224903534a2f83f3f81e104e64d551d4fe2ad39"
+  },
+  "id": "BnNsQl0UMeh3Rp8i",
+  "tags": []
+}

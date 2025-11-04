@@ -2,7 +2,14 @@
 export async function handleTableEdit(request, env) {
   try {
     const payload = await request.json();
-    const { table_id: tableId, table_data: tableData, prompt } = payload;
+    const { 
+      table_id: tableId, 
+      table_data: tableData, 
+      prompt,
+      web_search: webSearch,
+      session_id: sessionId,
+      reset_memory: resetMemory
+    } = payload;
 
     // Validasyon
     if (!tableId) {
@@ -94,6 +101,9 @@ export async function handleTableEdit(request, env) {
       edit_id: editId,
       table_id: tableId,
       callback_url: callbackUrl,
+      web_search: Boolean(webSearch),
+      session_id: sessionId || tableId,
+      reset_memory: Boolean(resetMemory),
       api_secret: env.API_SECRET,
     };
 

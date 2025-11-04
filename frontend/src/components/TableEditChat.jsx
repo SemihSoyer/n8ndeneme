@@ -7,6 +7,8 @@ export default function TableEditChat({ tableId, tableData, onTableUpdate }) {
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [editId, setEditId] = useState(null);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const [sessionId] = useState(() => tableId); // Session ID = tableId (sabit)
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -124,7 +126,10 @@ export default function TableEditChat({ tableId, tableData, onTableUpdate }) {
         },
       ]);
 
-      const response = await editTableWithAI(tableId, tableData, prompt);
+      const response = await editTableWithAI(tableId, tableData, prompt, {
+        web_search: webSearchEnabled,
+        session_id: sessionId,
+      });
 
       if (response.edit_id) {
         setEditId(response.edit_id);
@@ -153,7 +158,9 @@ export default function TableEditChat({ tableId, tableData, onTableUpdate }) {
           <span className="doc-icon">🤖</span>
           <div>
             <div className="doc-name">AI Tablo Düzenleme</div>
-            <div className="doc-meta">Tabloyu istediğiniz gibi düzenleyin</div>
+            <div className="doc-meta">
+              Tabloyu istediğiniz gibi düzenleyin
+            </div>
           </div>
         </div>
       </div>
@@ -205,6 +212,34 @@ export default function TableEditChat({ tableId, tableData, onTableUpdate }) {
       </div>
 
       <form className="chat-input-form" onSubmit={handleSubmit}>
+        <div className="web-search-wrapper">
+          <button
+            type="button"
+            className={`web-search-btn ${webSearchEnabled ? 'active' : ''}`}
+            onClick={() => setWebSearchEnabled(!webSearchEnabled)}
+            disabled={isSending}
+            title={webSearchEnabled ? 'Web Araması Açık' : 'Web Araması Kapalı'}
+          >
+            <svg 
+              width="20" 
+              height="20" 
+              viewBox="0 0 24 24" 
+              fill="none" 
+              stroke="currentColor" 
+              strokeWidth="2" 
+              strokeLinecap="round" 
+              strokeLinejoin="round"
+            >
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="2" y1="12" x2="22" y2="12"></line>
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+            </svg>
+            <span className="status-indicator"></span>
+          </button>
+          <span className="status-text">
+            {webSearchEnabled ? 'Açık' : 'Kapalı'}
+          </span>
+        </div>
         <input
           type="text"
           className="chat-input"
